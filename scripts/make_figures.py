@@ -78,7 +78,7 @@ def main():
             else:
                 print(f"Skipping incomplete seed run {d.name}")
     tables.mkdir(parents=True, exist_ok=True)
-    extra = [report.runtime_section(runs, tables)]
+    extra = [report.low_auroc_section(runs), report.runtime_section(runs, tables)]
     if (run_dir / "combo").exists():
         extra.append(report.combo_section(run_dir, tables))
     dup_csv = ROOT / "outputs" / "tables" / "dup_inflation.csv"

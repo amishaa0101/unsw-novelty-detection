@@ -183,6 +183,42 @@ def combo_section(run_dir, tables_dir):
     return lines
 
 
+def low_auroc_section(runs):
+    """Explanation to check for novelty AUROC < 0.5, with the best-matching known class of hidden flows."""
+    rows, shell = [], []
+    for r in runs:
+        if r["detector"] == "baseline":
+            continue
+        z = np.load(r["_npz"])
+        names = r["class_codes"]
+        best = z["best"][z["y"] == names.index(r["hidden"])]  # detector-only best class of each hidden flow
+        counts = pd.Series([names[b] for b in best]).value_counts(normalize=True)
+        auc = r["auroc"]["novelty_auroc_vs_known"]
+        if r["hidden"] == "Shellcode":
+            shell.append({"setting": r["setting"], "detector": r["detector"], "novelty AUROC (vs known)": auc,
+                          "share of hidden Shellcode flows whose best class is Exploits": counts.get("Exploits", 0.0)})
+        if auc < 0.5:
+            rows.append({"hidden": r["hidden"], "setting": r["setting"], "detector": r["detector"],
+                         "novelty AUROC (vs known)": auc, "most common best class": counts.index[0],
+                         "its share": counts.iloc[0]})
+    sh = pd.DataFrame([r for r in rows if r["hidden"] == "Shellcode"])
+    sh_line = []
+    if len(sh):
+        top = sh["most common best class"].value_counts()
+        exp = pd.DataFrame(shell)["share of hidden Shellcode flows whose best class is Exploits"]
+        sh_line = [f"In the Shellcode rounds below 0.5, the most common best class is {top.index[0]} in "
+                   f"{top.iloc[0]} of {len(sh)} rounds (share {sh['its share'].min():.3f} to "
+                   f"{sh['its share'].max():.3f}); the share whose best class is Exploits is "
+                   f"{exp.min():.3f} to {exp.max():.3f}.", ""]
+    return ["## Why novelty AUROC can fall below 0.5 (an explanation to check)", "",
+            "T(x) is the best match across all known classes (the minimum normalised score). A hidden attack whose "
+            "flows lie in the dense core of a broad known class can therefore score as more typical than average "
+            "known traffic, which pushes the novelty AUROC below 0.5. This is an explanation to check, not a "
+            "result. Supporting numbers: the class each hidden flow fits best (detector-only best class).", "",
+            "Shellcode rounds:", "", md(pd.DataFrame(shell)), ""] + sh_line + [
+            "All detector rounds with novelty AUROC (vs known) below 0.5:", "", md(pd.DataFrame(rows)), ""]
+
+
 def dup_inflation_section(csv_path):
     """Facts from scripts/run_dup_inflation.py (no LOAO; all classes known)."""
     t = pd.read_csv(csv_path)
