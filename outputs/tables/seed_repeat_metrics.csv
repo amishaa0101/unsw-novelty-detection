@@ -1,0 +1,9 @@
+setting,detector,detection_rate mean,detection_rate std,frac_unknown mean,frac_unknown std,false_alarm_rate mean,false_alarm_rate std,novelty_auroc_vs_known mean,novelty_auroc_vs_known std,alarm_auroc mean,alarm_auroc std
+with_shortcut,baseline,0.7013,0.0150,0.0704,0.0068,0.0442,0.0018,0.7236,0.0299,0.9509,0.0003
+with_shortcut,gmm,0.6811,0.0179,0.0819,0.0035,0.0542,0.0036,0.5337,0.0124,0.7809,0.0205
+with_shortcut,knn,0.6835,0.0172,0.0957,0.0059,0.0540,0.0026,0.6153,0.0019,0.8459,0.0014
+with_shortcut,pca,0.6841,0.0191,0.0335,0.0118,0.0541,0.0020,0.5203,0.0017,0.7120,0.0016
+without_shortcut,baseline,0.6607,0.0374,0.0796,0.0112,0.0445,0.0025,0.7392,0.0070,0.9457,0.0012
+without_shortcut,gmm,0.6671,0.0132,0.0985,0.0116,0.0519,0.0025,0.5415,0.0062,0.7637,0.0123
+without_shortcut,knn,0.6678,0.0133,0.0960,0.0028,0.0535,0.0026,0.6070,0.0012,0.8399,0.0021
+without_shortcut,pca,0.6423,0.0528,0.0208,0.0039,0.0555,0.0019,0.5070,0.0017,0.6607,0.0008

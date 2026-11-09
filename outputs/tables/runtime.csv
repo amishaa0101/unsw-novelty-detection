@@ -1,0 +1,5 @@
+detector,fit s (mean),fit s (max),score s (mean),score s (max),bootstrap s (mean),bootstrap s (max)
+baseline,4.76,17.41,0.47,0.97,23.83,55.04
+gmm,43.83,79.77,0.80,1.31,28.49,86.46
+knn,0.02,0.07,14.81,25.87,25.04,51.67
+pca,0.67,1.17,0.79,1.93,29.58,122.06
