@@ -55,16 +55,24 @@ def seed_summary(run_dirs):
                                                  "novelty_auroc_vs_known", "alarm_auroc"]].mean().reset_index()
         m["seed"] = seed
         per_seed.append(m)
-        for r in runs:
+        combo = load_runs(Path(d) / "combo") if (Path(d) / "combo").exists() else []
+        for r in runs + combo:
+            mode = "combo" if r["detector"].startswith("combo_") else "hybrid"
             for a in r["config"]["calibration"]["alphas"]:
                 calib.append({"seed": seed, "detector": r["detector"], "alpha": a,
-                              "rate": r["metrics"][f"hybrid|alpha={a}"]["false_unknown_rate_known"]})
+                              "rate": r["metrics"][f"{mode}|alpha={a}"]["false_unknown_rate_known"]})
     ps = pd.concat(per_seed)
     metrics = ps.groupby(["setting", "detector"]).agg(["mean", "std"]).drop(columns="seed")
     metrics.columns = [f"{a} {b}" for a, b in metrics.columns]
     c = pd.DataFrame(calib).groupby(["seed", "detector", "alpha"])["rate"].mean().reset_index()
     cal = c.groupby(["detector", "alpha"])["rate"].agg(["mean", "std", "min", "max"]).reset_index()
     cal = cal.rename(columns={"min": "lowest seed", "max": "highest seed"})
+    # Per-seed values side by side, and whether every seed is above alpha.
+    wide = c.pivot_table(index=["detector", "alpha"], columns="seed", values="rate").reset_index()
+    wide.columns = [f"seed {c}" if isinstance(c, (int, np.integer)) else c for c in wide.columns]
+    seed_cols = [c for c in wide.columns if str(c).startswith("seed ")]
+    wide["all seeds above alpha"] = (wide[seed_cols].gt(wide["alpha"], axis=0)).all(axis=1)
+    cal = cal.merge(wide, on=["detector", "alpha"])
     return metrics.reset_index(), cal, sorted(ps.seed.unique())
 
 
