@@ -63,7 +63,15 @@ def main():
     cfg = load_config(args.config)
     set_seed(cfg["seed"])
     save_run_info(cfg, "dup_inflation")
-    datasets = {"raw (duplicates and conflicts kept)": load_raw_clean_labels(cfg),
+    raw = load_raw_clean_labels(cfg)
+    # Remove every row of every conflicting group (same features, more than one attack_cat), but keep
+    # exact same-label duplicates: isolates pure duplicate inflation from label noise.
+    feats = data.feature_columns(raw)
+    n_labels = raw.groupby(feats, dropna=False)["attack_cat"].transform("nunique")
+    no_conflicts = raw[n_labels == 1].reset_index(drop=True)
+    print(f"raw minus conflicting groups: {len(no_conflicts):,} of {len(raw):,} rows kept")
+    datasets = {"raw (duplicates and conflicts kept)": raw,
+                "raw minus conflicting groups (same-label duplicates kept)": no_conflicts,
                 "deduplicated": pd.read_parquet(ROOT / cfg["processed_dir"] / "clean.parquet").reset_index(drop=True)}
     rows = []
     for name, df in datasets.items():

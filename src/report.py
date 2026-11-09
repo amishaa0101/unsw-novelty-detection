@@ -224,7 +224,8 @@ def dup_inflation_section(csv_path):
     t = pd.read_csv(csv_path)
     return ["## Duplicate-inflation check (optional experiment, no LOAO)", "",
             "The baseline classifier trained and tested on (a) the raw data with duplicates and conflicting "
-            "duplicates kept and (b) the deduplicated data, each with a random stratified 80/20 split, all 10 "
+            "duplicates kept, (b) the raw data with every conflicting group removed but same-label duplicates "
+            "kept, and (c) the deduplicated data, each with a random stratified 80/20 split, all 10 "
             "classes known, same features and preprocessing. Accuracy and macro-F1 on the 20% test split; the last "
             "two columns give the share of test rows whose exact feature vector is also in the training split, "
             "and the share whose feature vector is in the training split under a different attack_cat.", "",
