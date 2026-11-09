@@ -88,6 +88,7 @@ def deduplicate(df, policy="drop"):
     df = df.drop_duplicates(subset=feats + ["attack_cat"], keep="first")
     info["rows_after_exact"] = len(df)
     info["exact_removed"] = info["rows_before"] - len(df)
+    info["class_after_exact"] = df["attack_cat"].value_counts().to_dict()
 
     # Step 2: conflicting duplicates (same features, different attack_cat).
     df["_group"] = df.groupby(feats, dropna=False).ngroup()

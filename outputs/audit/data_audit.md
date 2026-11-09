@@ -2,6 +2,12 @@
 
 Config: `default.yaml`, seed 42, conflict_policy `drop`.
 
+## Findings
+
+- 36.8% of all rows are exact duplicates (94,928 of 257,673). The highest share is Generic (87.1%).
+- 411 conflicting groups have the same features labelled both Fuzzers and Normal.
+- 126 of the 133 `proto` values never occur in a Normal row; they cover 34,750 rows, all attacks. After dedup, 7 `proto` values remain, and every one of them also occurs in Normal rows: True.
+
 ## 1. Facts from the spec checked against the data
 
 - **DIFFERS**: `UNSW_NB15_training-set.csv` has 82,332 rows (spec says 175,341)
@@ -31,23 +37,29 @@ Duplicates are judged on the 42 feature columns only (`id`, `source_file`, `labe
 
 ## 4. Class counts before and after dedup
 
-| attack_cat | before_dedup | after_dedup | kept_% |
-|---|---|---|---|
-| Normal | 93,000 | 85,308 | 91.7 |
-| Generic | 58,871 | 7,283 | 12.4 |
-| Exploits | 44,525 | 25,451 | 57.2 |
-| Fuzzers | 24,246 | 18,749 | 77.3 |
-| DoS | 16,353 | 3,624 | 22.2 |
-| Reconnaissance | 13,987 | 8,419 | 60.2 |
-| Analysis | 2,677 | 450 | 16.8 |
-| Backdoor | 2,329 | 350 | 15 |
-| Shellcode | 1,511 | 1,446 | 95.7 |
-| Worms | 174 | 159 | 91.4 |
+`lost_exact` = rows removed as exact duplicates; `lost_conflict` = rows removed by the conflicting-duplicate step (counted after exact dedup).
+
+| attack_cat | before_dedup | after_exact | after_dedup | lost_exact | lost_conflict | exact_dup_% | kept_% |
+|---|---|---|---|---|---|---|---|
+| Normal | 93,000 | 85,722 | 85,308 | 7,278 | 414 | 7.8 | 91.7 |
+| Generic | 58,871 | 7,599 | 7,283 | 51,272 | 316 | 87.1 | 12.4 |
+| Exploits | 44,525 | 27,434 | 25,451 | 17,091 | 1,983 | 38.4 | 57.2 |
+| Fuzzers | 24,246 | 20,960 | 18,749 | 3,286 | 2,211 | 13.6 | 77.3 |
+| DoS | 16,353 | 5,500 | 3,624 | 10,853 | 1,876 | 66.4 | 22.2 |
+| Reconnaissance | 13,987 | 9,991 | 8,419 | 3,996 | 1,572 | 28.6 | 60.2 |
+| Analysis | 2,677 | 2,032 | 450 | 645 | 1,582 | 24.1 | 16.8 |
+| Backdoor | 2,329 | 1,880 | 350 | 449 | 1,530 | 19.3 | 15 |
+| Shellcode | 1,511 | 1,456 | 1,446 | 55 | 10 | 3.6 | 95.7 |
+| Worms | 174 | 171 | 159 | 3 | 12 | 1.7 | 91.4 |
 
 ## 5. Conflicting duplicates
 
 - Conflicting groups (same features, different attack_cat, after exact dedup): 2,445
 - Rows in those groups: 11,506
+- Policy: `drop`. Why we drop them (decision at Checkpoint 1):
+  1. Identical feature vectors with different labels cannot be separated by any method.
+  2. They would make LOAO invalid: a "hidden" flow identical to a known-class training flow can never look novel.
+  3. 9,231 of the 11,506 conflicting rows use a `proto` value that never occurs in Normal rows, and "rare proto means attack" is a lab artifact like TTL (see Findings).
 
 Label sets that clash (number of groups):
 
@@ -167,6 +179,8 @@ Total missing values: 0
 - `proto`: 7 distinct values. Most common: `tcp` 116,373, `udp` 33,961, `arp` 766, `ospf` 84, `igmp` 41, `icmp` 13, `rtp` 1
 - `service`: 13 distinct values. Most common: `-` 90,250, `http` 25,673, `dns` 16,889, `smtp` 6,774, `ftp-data` 4,459, `ftp` 3,978, `ssh` 1,499, `pop3` 1,485, `ssl` 86, `snmp` 67, `dhcp` 31, `irc` 30
 - `state`: 11 distinct values. Most common: `FIN` 111,409, `CON` 19,005, `INT` 18,832, `REQ` 1,891, `RST` 84, `ECO` 10, `ACC` 4, `CLO` 1, `PAR` 1, `URN` 1, `no` 1
+
+`proto` has 133 distinct values before dedup and 7 after. So `proto_top_n: 10` in the config currently has no effect (it is kept in case the conflict policy changes).
 
 ## 8. Numeric summaries (clean data)
 

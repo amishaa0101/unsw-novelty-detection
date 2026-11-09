@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src import data  # noqa: E402
+from src import data, shortcut_audit  # noqa: E402
 from src.config import ROOT, load_config, save_run_info, set_seed  # noqa: E402
 from src.split import make_splits  # noqa: E402
 
@@ -114,6 +114,12 @@ def main():
     # ---- Drop id (row index, not a feature)
     raw = raw.drop(columns=["id"])
 
+    # proto values that occur only in attack rows (computed before dedup, for the Findings).
+    n_proto_raw = raw["proto"].nunique()
+    normal_protos = set(raw.loc[raw["attack_cat"] == "Normal", "proto"])
+    attack_only = raw[~raw["proto"].isin(normal_protos)]
+    n_rare_after_exact = len(attack_only.drop_duplicates(subset=data.feature_columns(raw) + ["attack_cat"]))
+
     # ---- Deduplicate
     counts_before = data.class_counts(raw)
     clean, info = data.deduplicate(raw, policy=cfg["conflict_policy"])
@@ -127,15 +133,28 @@ def main():
            "(`id`, `source_file`, `label`, `attack_cat` excluded). "
            f"Exact duplicates removed: {info['exact_removed']:,}. Rows removed by the conflict step: {info['conflict_removed']:,}.", ""]
 
-    cls = pd.DataFrame({"before_dedup": counts_before, "after_dedup": counts_after}).fillna(0).astype(int)
+    cls = pd.DataFrame({"before_dedup": counts_before,
+                        "after_exact": pd.Series(info["class_after_exact"]),
+                        "after_dedup": counts_after}).fillna(0).astype(int)
+    cls["lost_exact"] = cls["before_dedup"] - cls["after_exact"]
+    cls["lost_conflict"] = cls["after_exact"] - cls["after_dedup"]
+    cls["exact_dup_%"] = (100 * cls["lost_exact"] / cls["before_dedup"]).round(1)
     cls["kept_%"] = (100 * cls["after_dedup"] / cls["before_dedup"]).round(1)
     cls = cls.sort_values("before_dedup", ascending=False)
-    md += ["## 4. Class counts before and after dedup", "", md_table(cls), ""]
+    md += ["## 4. Class counts before and after dedup", "",
+           "`lost_exact` = rows removed as exact duplicates; `lost_conflict` = rows removed by the "
+           "conflicting-duplicate step (counted after exact dedup).", "",
+           md_table(cls.rename_axis("attack_cat")), ""]
 
     md += ["## 5. Conflicting duplicates", "",
            f"- Conflicting groups (same features, different attack_cat, after exact dedup): {info['conflict_groups']:,}",
-           f"- Rows in those groups: {info['conflict_rows']:,}", "",
-           "Label sets that clash (number of groups):", ""]
+           f"- Rows in those groups: {info['conflict_rows']:,}",
+           f"- Policy: `{info['policy']}`. Why we drop them (decision at Checkpoint 1):",
+           "  1. Identical feature vectors with different labels cannot be separated by any method.",
+           "  2. They would make LOAO invalid: a \"hidden\" flow identical to a known-class training flow can never look novel.",
+           f"  3. {n_rare_after_exact:,} of the {info['conflict_rows']:,} conflicting rows use a `proto` value that never "
+           "occurs in Normal rows, and \"rare proto means attack\" is a lab artifact like TTL (see Findings).",
+           "", "Label sets that clash (number of groups):", ""]
     sets = pd.Series(info["conflict_label_sets"], name="groups").rename_axis("labels")
     md += [md_table(sets.to_frame()), "",
            "Original rows (before exact dedup) per class that sit in conflicting groups:", "",
@@ -154,7 +173,9 @@ def main():
         vc = clean[c].value_counts()
         top = ", ".join(f"`{k}` {v:,}" for k, v in vc.head(12).items())
         md.append(f"- `{c}`: {len(vc)} distinct values. Most common: {top}")
-    md.append("")
+    md += ["", f"`proto` has {n_proto_raw} distinct values before dedup and {clean['proto'].nunique()} after. "
+           f"So `proto_top_n: {cfg['preprocess']['proto_top_n']}` in the config currently has no effect "
+           "(it is kept in case the conflict policy changes).", ""]
 
     # ---- Numeric skew
     num = data.numeric_summary(clean, data.numeric_columns(clean))
@@ -177,6 +198,23 @@ def main():
            f"Smallest possible pooled p-value at this size: 1/(n_final + 1) = 1/{prev.loc['TOTAL', 'calib_final'] + 1:,} "
            f"= {1 / (prev.loc['TOTAL', 'calib_final'] + 1):.2e}, far below the smallest alpha (0.005).", ""]
 
+    # ---- Findings (facts only), placed right after the title block
+    top_dup = cls["exact_dup_%"].idxmax()
+    fuzz_norm = info["conflict_label_sets"].get("Fuzzers | Normal", 0)
+    findings = [
+        "## Findings", "",
+        f"- {100 * info['exact_removed'] / info['rows_before']:.1f}% of all rows are exact duplicates "
+        f"({info['exact_removed']:,} of {info['rows_before']:,}). The highest share is {top_dup} "
+        f"({cls.loc[top_dup, 'exact_dup_%']}%).",
+        f"- {fuzz_norm} conflicting groups have the same features labelled both Fuzzers and Normal.",
+        f"- {attack_only['proto'].nunique()} of the {n_proto_raw} `proto` values never occur in a Normal row; "
+        f"they cover {len(attack_only):,} rows, all attacks. After dedup, {clean['proto'].nunique()} `proto` "
+        f"values remain, and every one of them also occurs in Normal rows: "
+        f"{set(clean['proto']) <= normal_protos}.",
+        "",
+    ]
+    md[4:4] = findings
+
     # ---- Save
     out_dir = ROOT / cfg["processed_dir"]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +226,14 @@ def main():
 
     print("\n".join(md[:3]))
     print(f"Saved {out_dir / 'clean.parquet'} ({len(clean):,} rows) and {audit_dir / 'data_audit.md'}")
+
+    # ---- Phase 2: single-feature shortcut audit on the clean data
+    print("Running the single-feature shortcut audit ...")
+    table = shortcut_audit.run_audit(clean, cfg["attack_types"], cfg["seed"])
+    table.to_csv(audit_dir / "shortcut_audit.csv", index=False, float_format="%.4f")
+    shortcut_audit.plot_top(table, audit_dir / "shortcut_audit_top20.png")
+    (audit_dir / "shortcut_audit.md").write_text(shortcut_audit.report(table, cfg["attack_types"], clean, cfg["seed"]), encoding="utf-8")
+    print(f"Saved {audit_dir / 'shortcut_audit.csv'}, shortcut_audit_top20.png and shortcut_audit.md")
 
 
 if __name__ == "__main__":

@@ -79,6 +79,7 @@ Official page: https://research.unsw.edu.au/projects/unsw-nb15-dataset (the down
 - **Duplicates**, handled in this order and reported with counts:
   1. Exact duplicate rows (all columns equal): keep one.
   2. **Conflicting duplicates**: identical feature vectors with different `attack_cat`. Report how many groups and which label pairs. Default: drop all rows in conflicting groups (config option `conflict_policy: drop | majority`).
+     **Decision (Checkpoint 1): keep `drop`.** The audit showed all 34,750 raw rows with the 126 rare `proto` values are attacks, near-identical tiny probes whose feature vectors carry several attack labels at once; after exact dedup every one of them is in a conflicting group. They cannot be told apart, and "rare proto means attack" is itself a shortcut, so dropping them is the honest choice. Cost: `proto` falls to 7 values, and DoS, Analysis and Backdoor shrink a lot.
 - **Never use `label` or `attack_cat` as features.**
 - Loading adds a `source_file` column (which official CSV a row came from). It is for the audit only and **must never be used as a feature** (the Preprocessor asserts this).
 - Read the CSVs with `encoding="utf-8-sig"` (the headers start with a BOM).
@@ -242,6 +243,8 @@ Common interface for one class's detector: `fit(X)` and `score(X)`, where **a hi
 
 **PerClassDetector wrapper**: given a detector type, fits one detector per known class (Normal + the 8 known attacks), and returns a score matrix of shape `(n_samples, n_known_classes)`.
 
+**Logging for the report**: record the BIC-selected K (and the BIC value for every K tried) per class per round, and the PCA k per class per round, in the run JSON, so we can report them.
+
 ### Phase 5: Calibration and decision rule (`src/calibration.py`): two-stage design
 
 **Why not per-class p-values.** A per-class conformal p-value has a floor: `p_c(x) >= 1/(n_c + 1)`. If a small class such as Worms has about 30 calibration rows, `p_Worms(x) >= 0.032` for every flow, so `max_c p_c(x) > 0.01` always, and nothing could ever be flagged unknown at alpha = 0.01 in any round where that class is known. So we use one pooled p-value instead.
@@ -345,7 +348,7 @@ Then generate `outputs/results.md` automatically from the saved run files: table
 - `test_calibration.py`: the p-value formula on a tiny hand-made example (for example calib statistics `[1,2,3,4]`, test value `3.5` gives `P = (1+1)/5 = 0.4`); `P(x)` is never below `1/(n_final + 1)`; on synthetic data with several classes of very different sizes and scales, the pooled false unknown rate on known test data is close to alpha (within sampling error); normalisation constants depend only on calib_norm rows (changing calib_final or test rows does not change them); the IQR fallback works for a constant-score class; BH matches `scipy.stats.false_discovery_control`.
 - `test_detectors.py`: on synthetic 2D data, a far-away point gets a higher score than a central point for all three detectors; PCA gives near-zero error for a point exactly on the main direction; the KNN detector builds a new index on every fit (two fits on different data give different results).
 
-All tests must pass before Phase 7 starts.
+Write each test file together with its module (not all at once before Phase 7), and run it before moving on. All tests must pass before Phase 7 starts.
 
 ---
 
