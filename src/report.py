@@ -19,9 +19,53 @@ AUROC_TEXT = {
 
 
 def run_label(run_dir):
-    """Every table and figure says which run it came from."""
-    return "FULL run (configs/default.yaml)" if Path(run_dir).name == "default" else \
-        f"QUICK smoke-test run (configs/{Path(run_dir).name}.yaml): not results"
+    """Every table and figure says which run it came from (read from the run's own saved config)."""
+    first = next(Path(run_dir).glob("*.json"))
+    with open(first, encoding="utf-8") as f:
+        cfg = json.load(f)["config"]
+    name = Path(run_dir).name
+    if cfg["subsample_frac"] < 1.0:
+        return f"QUICK smoke-test run (configs/{name}.yaml): not results"
+    return f"FULL run (configs/{name}.yaml, seed {cfg['seed']})"
+
+
+def normal_test_overlap(runs):
+    """For every pair of rounds (one detector, so one file per round): share of Normal test flows in common."""
+    det = runs[0]["detector"]
+    sets = []
+    for r in runs:
+        if r["detector"] != det:
+            continue
+        z = np.load(r["_npz"])
+        sets.append(set(z["row"][z["y"] == r["class_codes"].index("Normal")].tolist()))
+    return np.array([len(a & b) / len(a) for i, a in enumerate(sets) for b in sets[i + 1:]])
+
+
+def seed_summary(run_dirs):
+    """Mean and SD across seeds of (a) per-seed means over hidden attacks and (b) pooled false unknown rates.
+
+    Each seed contributes one number per (setting, detector): the mean over its 9 hidden-attack rounds.
+    """
+    per_seed, calib = [], []
+    for d in run_dirs:
+        runs = load_runs(d)
+        seed = runs[0]["config"]["seed"]
+        t = main_table(runs)
+        m = t.groupby(["setting", "detector"])[["detection_rate", "frac_unknown", "false_alarm_rate",
+                                                 "novelty_auroc_vs_known", "alarm_auroc"]].mean().reset_index()
+        m["seed"] = seed
+        per_seed.append(m)
+        for r in runs:
+            for a in r["config"]["calibration"]["alphas"]:
+                calib.append({"seed": seed, "detector": r["detector"], "alpha": a,
+                              "rate": r["metrics"][f"hybrid|alpha={a}"]["false_unknown_rate_known"]})
+    ps = pd.concat(per_seed)
+    metrics = ps.groupby(["setting", "detector"]).agg(["mean", "std"]).drop(columns="seed")
+    metrics.columns = [f"{a} {b}" for a, b in metrics.columns]
+    c = pd.DataFrame(calib).groupby(["seed", "detector", "alpha"])["rate"].mean().reset_index()
+    cal = c.groupby(["detector", "alpha"])["rate"].agg(["mean", "std", "min", "max"]).reset_index()
+    cal = cal.rename(columns={"min": "lowest seed", "max": "highest seed"})
+    return metrics.reset_index(), cal, sorted(ps.seed.unique())
 
 
 def load_runs(run_dir):
@@ -92,8 +136,12 @@ def md(df, floatfmt=".3f"):
     return "\n".join(out)
 
 
-def build(run_dir, out_path, tables_dir, figures):
-    """Write results.md. `figures` is a list of (relative path, caption)."""
+def build(run_dir, out_path, tables_dir, figures, seed_dirs=(), extra_sections=()):
+    """Write results.md. `figures` is a list of (relative path, caption).
+
+    seed_dirs: complete runs with other seeds (same config otherwise) for the seed-repeat section.
+    extra_sections: lists of markdown lines appended before the figures.
+    """
     runs = load_runs(run_dir)
     assert runs, f"no run files in {run_dir}"
     cfg = runs[0]["config"]
@@ -192,6 +240,27 @@ def build(run_dir, out_path, tables_dir, figures):
         res[f"needed q={q}"] = (res.p_min * res.m / q).round(0).astype(int)
     res["p_min"] = res.p_min.map(lambda v: f"{v:.2e}")
     out += [md(res), ""]
+
+    # ---- Seed repeat
+    if seed_dirs:
+        metrics, scal, seeds = seed_summary([run_dir, *seed_dirs])
+        metrics.to_csv(tables_dir / "seed_repeat_metrics.csv", index=False, float_format="%.4f")
+        scal.to_csv(tables_dir / "seed_repeat_calibration.csv", index=False, float_format="%.5f")
+        ov = normal_test_overlap(runs)
+        out += [f"## Seed repeat (seeds {', '.join(str(s) for s in seeds)}; hybrid mode)", "",
+                "The rounds within one seed are not independent: they share the seed and all use the same Normal "
+                "flows (Normal is never hidden). With the same seed, pairs of rounds often put the same Normal "
+                f"flows into the test split: over all pairs of rounds in seed {cfg['seed']}, the share of Normal "
+                f"test flows in common ranges from {ov.min():.2f} to {ov.max():.2f} (median {np.median(ov):.2f}; "
+                f"about {cfg['split']['test']:.2f} would be expected by chance). The spread across rounds therefore "
+                "understates run-to-run variation, and the seed repeat is the right check for the small excess "
+                "of the pooled false unknown rate above alpha.", "",
+                f"Mean and SD across seeds of each seed's mean over the hidden attack types (alpha = {alpha}):", "",
+                md(metrics, ".4f"), "",
+                "Pooled false unknown rate on known test rows: each seed's mean over its rounds, then mean, SD, "
+                "lowest and highest across seeds:", "", md(scal, ".5f"), ""]
+    for section in extra_sections:
+        out += list(section)
 
     # ---- Figures
     out += ["## Figures", ""]

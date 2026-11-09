@@ -48,7 +48,15 @@ def main():
 
     results = ROOT / "outputs" / ("results.md" if full else f"results_{name}.md")
     tables = ROOT / "outputs" / "tables" / ("" if full else name)
-    report.build(run_dir, results, tables, figures)
+    # Seed-repeat runs (configs/seed*.yaml) are included only when complete (same number of run files).
+    seed_dirs = []
+    if full:
+        for d in sorted((ROOT / "outputs" / "runs").glob("seed*")):
+            if len(list(d.glob("*.json"))) == len(runs):
+                seed_dirs.append(d)
+            else:
+                print(f"Skipping incomplete seed run {d.name}")
+    report.build(run_dir, results, tables, figures, seed_dirs=seed_dirs)
     print("Saved", results, f"({label})")
 
 

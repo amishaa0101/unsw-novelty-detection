@@ -1,0 +1,3 @@
+# Seed repeat: same as default.yaml with a different seed.
+base: default.yaml
+seed: 43
