@@ -2,7 +2,7 @@
 import numpy as np
 
 from src.calibration import UNKNOWN
-from src.metrics import auroc_hidden_vs_normal, bootstrap, false_unknown_by_class, outcome_metrics
+from src.metrics import auroc_hidden_vs, bootstrap, confusion, false_unknown_by_class, outcome_metrics
 
 NORMAL, A, HIDDEN = 0, 1, 9
 
@@ -30,8 +30,23 @@ def test_outcomes_by_hand():
 
 def test_auroc_perfect_and_reversed():
     y = np.array([HIDDEN, HIDDEN, NORMAL, NORMAL])
-    assert auroc_hidden_vs_normal(np.array([5.0, 6, 1, 2]), y, HIDDEN, NORMAL) == 1.0
-    assert auroc_hidden_vs_normal(np.array([1.0, 2, 5, 6]), y, HIDDEN, NORMAL) == 0.0
+    assert auroc_hidden_vs(np.array([5.0, 6, 1, 2]), y, HIDDEN, NORMAL, "normal") == 1.0
+    assert auroc_hidden_vs(np.array([1.0, 2, 5, 6]), y, HIDDEN, NORMAL, "normal") == 0.0
+
+
+def test_auroc_negatives_choice():
+    # Known attack row A scores above the hidden rows: matters only when negatives = "known".
+    y = np.array([HIDDEN, HIDDEN, NORMAL, A])
+    s = np.array([5.0, 6, 1, 9])
+    assert auroc_hidden_vs(s, y, HIDDEN, NORMAL, "normal") == 1.0
+    assert auroc_hidden_vs(s, y, HIDDEN, NORMAL, "known") == 0.5
+
+
+def test_confusion_counts():
+    pred, y = example()
+    M = confusion(pred, y, [NORMAL, A, HIDDEN], [NORMAL, A, UNKNOWN])
+    assert M.tolist() == [[3, 0, 1], [0, 1, 1], [1, 1, 2]]
+    assert M.sum() == len(y)
 
 
 def test_bootstrap_contains_point_and_is_seeded():
@@ -39,8 +54,10 @@ def test_bootstrap_contains_point_and_is_seeded():
     y = np.array([HIDDEN] * 300 + [NORMAL] * 600 + [A] * 200)
     pred = np.where(rng.uniform(size=len(y)) < 0.3, UNKNOWN, y)
     nov = rng.normal(size=len(y)) + (y == HIDDEN)
-    b1 = bootstrap({"x": pred}, nov, y, HIDDEN, NORMAL, 200, 0.95, seed=1)
-    b2 = bootstrap({"x": pred}, nov, y, HIDDEN, NORMAL, 200, 0.95, seed=1)
+    aucs = {"a": (nov, "normal"), "b": (nov, "known")}
+    b1 = bootstrap({"x": pred}, aucs, y, HIDDEN, NORMAL, 200, 0.95, seed=1)
+    b2 = bootstrap({"x": pred}, aucs, y, HIDDEN, NORMAL, 200, 0.95, seed=1)
+    assert set(b1["auroc"]) == {"a", "b"}
     assert b1 == b2
     point = outcome_metrics(pred, y, HIDDEN, NORMAL)["frac_unknown"]
     lo, hi = b1["x"]["frac_unknown"]

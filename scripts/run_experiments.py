@@ -44,9 +44,14 @@ def main():
         sys.exit(f"{clean_path} not found. Run: python scripts/run_audit.py")
     df = pd.read_parquet(clean_path)
     if cfg["subsample_frac"] < 1.0:
-        # Stratified subsample for smoke tests: the same fraction of every class.
-        df = df.groupby("attack_cat", group_keys=False).sample(frac=cfg["subsample_frac"], random_state=cfg["seed"])
-        log.info("Subsampled to %d rows (frac %.2f)", len(df), cfg["subsample_frac"])
+        # Smoke tests: subsample only the large classes. Small classes are kept whole, otherwise
+        # they get a handful of calibration rows and their median/IQR become meaningless.
+        keep_below = cfg.get("subsample_keep_below", 0)
+        parts = [g if len(g) < keep_below else g.sample(frac=cfg["subsample_frac"], random_state=cfg["seed"])
+                 for _, g in df.groupby("attack_cat")]
+        df = pd.concat(parts)
+        log.info("Subsampled to %d rows (frac %.2f for classes with >= %d rows)", len(df),
+                 cfg["subsample_frac"], keep_below)
     df = df.reset_index(drop=True)
     log.info("Rows: %d. Classes: %s", len(df), df["attack_cat"].value_counts().to_dict())
 

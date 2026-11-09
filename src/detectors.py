@@ -36,6 +36,8 @@ class GMMDetector:
             if best is None or self.bic[k] < self.bic[best[0]]:
                 best = (k, gm)
         self.k, self.model = best
+        # Rows per component (by highest responsibility), to spot tiny components in small classes.
+        self.component_sizes = np.bincount(self.model.predict(X), minlength=self.k).tolist()
         return self
 
     def score(self, X):
@@ -43,7 +45,7 @@ class GMMDetector:
 
     def info(self):
         return {"k": self.k, "bic": self.bic, "n_rows": self.n_rows, "subsampled": self.subsampled,
-                "reg_covar": self.reg_covar}
+                "reg_covar": self.reg_covar, "component_sizes": self.component_sizes}
 
     def nll_breakdown(self, X, onehot_mask):
         """Split the NLL under each row's most responsible component into per-column parts.
@@ -133,6 +135,13 @@ class PerClassDetector:
             self.detectors[c] = self.make_detector().fit(rows)
         return self
 
+    @classmethod
+    def from_fitted(cls, detectors):
+        """Wrap detectors that were already fitted elsewhere (for example in parallel)."""
+        obj = cls(None, list(detectors))
+        obj.detectors = dict(detectors)
+        return obj
+
     def score(self, X):
         return np.column_stack([self.detectors[c].score(X) for c in self.classes])
 
@@ -151,17 +160,29 @@ def class_separation_auroc(S, y, classes):
     return out
 
 
-def select_gmm_reg_covar(gmm_cfg, seed, classes, X_train, y_train, X_norm, y_norm):
+def _fit_gmm(gmm_cfg, reg, seed, X):
+    return GMMDetector(gmm_cfg["k_grid"], gmm_cfg["covariance_type"], gmm_cfg["n_init"], reg,
+                       gmm_cfg["max_fit_rows"], seed).fit(X)
+
+
+def select_gmm_reg_covar(gmm_cfg, seed, classes, X_train, y_train, X_norm, y_norm, n_jobs=1):
     """Fit per-class GMMs for each reg_covar and keep the one that best separates known classes on calib_norm.
 
     Only train rows (fitting) and calib_norm rows (choosing) are used; calib_final and test are never seen.
-    Returns the fitted PerClassDetector and a table of mean AUROC per reg_covar.
+    The (reg_covar, class) fits are independent and seeded, so running them in parallel gives the
+    same models as running them one by one.
+    Returns the fitted PerClassDetector, the chosen reg_covar and a table of mean AUROC per reg_covar.
     """
+    from joblib import Parallel, delayed
+
+    jobs = [(reg, c) for reg in gmm_cfg["reg_covar_grid"] for c in classes]
+    jobs.sort(key=lambda j: -int((y_train == j[1]).sum()))  # start the slow, big classes first
+    fitted = Parallel(n_jobs=n_jobs)(delayed(_fit_gmm)(gmm_cfg, reg, seed, X_train[y_train == c]) for reg, c in jobs)
+    by_job = dict(zip(jobs, fitted))
+
     table, best = {}, None
     for reg in gmm_cfg["reg_covar_grid"]:
-        det = PerClassDetector(lambda reg=reg: GMMDetector(
-            gmm_cfg["k_grid"], gmm_cfg["covariance_type"], gmm_cfg["n_init"], reg, gmm_cfg["max_fit_rows"], seed),
-            classes).fit(X_train, y_train)
+        det = PerClassDetector.from_fitted({c: by_job[(reg, c)] for c in classes})
         per_class = class_separation_auroc(det.score(X_norm), y_norm, classes)
         table[reg] = {"mean_auroc": float(np.mean(list(per_class.values()))), "per_class": per_class}
         if best is None or table[reg]["mean_auroc"] > table[best[0]]["mean_auroc"]:

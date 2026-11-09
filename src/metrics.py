@@ -42,34 +42,49 @@ def false_unknown_by_class(pred, y, hidden):
     return {int(c): _mean(pred[y == c] == UNKNOWN) for c in np.unique(y) if c != hidden}
 
 
-def auroc_hidden_vs_normal(novelty, y, hidden, normal):
-    """Hidden attack rows (positive) vs Normal rows (negative); higher novelty = more unusual."""
-    m = (y == hidden) | (y == normal)
-    return float(roc_auc_score((y[m] == hidden).astype(int), novelty[m]))
+def auroc_hidden_vs(score, y, hidden, normal, negatives):
+    """AUROC with hidden attack rows as positives; higher score = more unusual.
+
+    negatives = "normal": Normal test rows only; negatives = "known": all known-class test rows.
+    """
+    neg = (y == normal) if negatives == "normal" else (y != hidden)
+    m = (y == hidden) | neg
+    return float(roc_auc_score((y[m] == hidden).astype(int), score[m]))
 
 
-def bootstrap(decisions, novelty, y, hidden, normal, n_resamples, ci, seed):
+def confusion(pred, y, row_codes, col_codes):
+    """Counts of (true class, assigned label). Columns include UNKNOWN."""
+    r = {c: i for i, c in enumerate(row_codes)}
+    k = {c: i for i, c in enumerate(col_codes)}
+    M = np.zeros((len(row_codes), len(col_codes)), dtype=int)
+    np.add.at(M, (np.array([r[v] for v in y]), np.array([k[v] for v in pred])), 1)
+    return M
+
+
+def bootstrap(decisions, aurocs, y, hidden, normal, n_resamples, ci, seed):
     """Percentile CIs. Resample rows with replacement within each group (hidden, Normal, known attacks).
 
-    decisions: dict name -> prediction array. Returns dict name -> metric -> [low, high],
-    plus "auroc" -> [low, high].
+    decisions: dict name -> prediction array.
+    aurocs: dict name -> (score array, "normal" | "known").
+    Returns dict name -> metric -> [low, high], plus "auroc" -> name -> [low, high].
     """
     rng = np.random.default_rng(seed)
     groups = [np.nonzero(y == hidden)[0], np.nonzero(y == normal)[0],
               np.nonzero((y != hidden) & (y != normal))[0]]
     samples = {name: [] for name in decisions}
-    aurocs = []
+    auc_samples = {name: [] for name in aurocs}
     for _ in range(n_resamples):
         idx = np.concatenate([rng.choice(g, size=len(g), replace=True) for g in groups if len(g)])
         yb = y[idx]
         for name, pred in decisions.items():
             samples[name].append(outcome_metrics(pred[idx], yb, hidden, normal))
-        aurocs.append(auroc_hidden_vs_normal(novelty[idx], yb, hidden, normal))
+        for name, (score, negatives) in aurocs.items():
+            auc_samples[name].append(auroc_hidden_vs(score[idx], yb, hidden, normal, negatives))
 
     lo, hi = 100 * (1 - ci) / 2, 100 * (1 + ci) / 2
     out = {}
     for name, rows in samples.items():
         out[name] = {k: [float(np.percentile([r[k] for r in rows], lo)), float(np.percentile([r[k] for r in rows], hi))]
                      for k in rows[0] if k != "n_flagged"}
-    out["auroc"] = [float(np.percentile(aurocs, lo)), float(np.percentile(aurocs, hi))]
+    out["auroc"] = {name: [float(np.percentile(v, lo)), float(np.percentile(v, hi))] for name, v in auc_samples.items()}
     return out

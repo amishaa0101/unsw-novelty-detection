@@ -64,6 +64,21 @@ def test_gmm_nll_breakdown_adds_up_for_one_component():
     assert np.allclose(total, det.score(X[:20]), rtol=1e-6)
 
 
+def test_gmm_component_sizes_sum_to_rows():
+    det = GMMDetector([1, 2, 4], n_init=1, seed=0).fit(blob(n=300))
+    assert sum(det.component_sizes) == 300 and len(det.component_sizes) == det.k
+
+
+def test_parallel_gmm_selection_equals_sequential():
+    from src.detectors import select_gmm_reg_covar
+    X = np.vstack([blob(n=200, seed=1), blob(n=100, seed=2) + 10]).astype(np.float32)
+    y = np.array([0] * 200 + [1] * 100)
+    cfg = {"reg_covar_grid": [1e-3, 1e-1], "k_grid": [1, 2], "covariance_type": "diag", "n_init": 1, "max_fit_rows": 10000}
+    a, reg_a, _ = select_gmm_reg_covar(cfg, 0, [0, 1], X, y, X, y, n_jobs=1)
+    b, reg_b, _ = select_gmm_reg_covar(cfg, 0, [0, 1], X, y, X, y, n_jobs=2)
+    assert reg_a == reg_b and np.allclose(a.score(X), b.score(X))
+
+
 def test_per_class_wrapper_shape_and_separation():
     X = np.vstack([blob(seed=1), blob(seed=2) + np.array([0, 20], dtype=np.float32)])
     y = np.array(["A"] * 500 + ["B"] * 500)

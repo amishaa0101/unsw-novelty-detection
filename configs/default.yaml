@@ -24,6 +24,7 @@ gmm:
   reg_covar_grid: [1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1]   # chosen per round on calib_norm only
   nll_breakdown_rows: 200   # rows per group for the one-hot vs numeric NLL breakdown
   max_fit_rows: 20000       # random subsample per class for speed; logged when used
+  n_jobs: -1                # parallel (reg_covar, class) fits; same results as sequential
 pca:
   explained_variance: 0.95
 knn:
