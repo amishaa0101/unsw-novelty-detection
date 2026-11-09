@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src import report  # noqa: E402
 from src.config import ROOT, load_config  # noqa: E402
-from src.plots import HYBRID_CAPTION, confusion_figure, frac_unknown_vs_alpha  # noqa: E402
+from src.plots import (HYBRID_CAPTION, calibration_plot, confusion_figure, detection_heatmaps,  # noqa: E402
+                       frac_unknown_vs_alpha, shortcut_bars)
 
 
 def main():
@@ -29,6 +30,26 @@ def main():
 
     figures = []  # (path relative to outputs/, caption)
     runs = report.load_runs(run_dir)
+    dets, sets = cfg["detectors"], cfg["feature_settings"]
+
+    def add(out, caption):
+        figures.append((out.relative_to(ROOT / "outputs").as_posix(), f"[{short}] {caption}"))
+
+    out = fig_dir / "detection_heatmaps.png"
+    detection_heatmaps(runs, dets, sets, short, out)
+    add(out, "Detection rate (top) and share flagged unknown (bottom) per hidden attack and detector, hybrid mode, "
+             "main alpha. In hybrid mode detection rates are close across detectors because they share the "
+             "classifier's labels; the unknown share is what differs.")
+    for metric, ylabel in [("detection_rate", "detection rate"), ("frac_unknown", "share flagged unknown")]:
+        out = fig_dir / f"shortcut_bars_{metric}.png"
+        shortcut_bars(runs, dets, metric, ylabel, short, out)
+        add(out, f"{ylabel.capitalize()} with vs without shortcut features, per hidden attack and detector, "
+                 "hybrid mode, main alpha, 95% bootstrap CIs.")
+    out = fig_dir / "calibration.png"
+    calibration_plot(runs, dets, short, out)
+    add(out, "Empirical false unknown rate vs alpha. Left: pooled over known test rows (what the conformal "
+             "guarantee covers), mean over rounds with min to max bars. Right: per known class, mean over rounds "
+             "and detectors (the guarantee is marginal, not per class).")
     out = fig_dir / "frac_unknown_vs_alpha.png"
     frac_unknown_vs_alpha(runs, cfg["detectors"], cfg["feature_settings"], short, out)
     figures.append((out.relative_to(ROOT / "outputs").as_posix(),
@@ -57,7 +78,9 @@ def main():
             else:
                 print(f"Skipping incomplete seed run {d.name}")
     tables.mkdir(parents=True, exist_ok=True)
-    extra = [report.combo_section(run_dir, tables)] if (run_dir / "combo").exists() else []
+    extra = [report.runtime_section(runs, tables)]
+    if (run_dir / "combo").exists():
+        extra.append(report.combo_section(run_dir, tables))
     report.build(run_dir, results, tables, figures, seed_dirs=seed_dirs, extra_sections=extra)
     print("Saved", results, f"({label})")
 

@@ -183,6 +183,20 @@ def combo_section(run_dir, tables_dir):
     return lines
 
 
+def runtime_section(runs, tables_dir):
+    """Runtime per detector over all rounds, from the saved run files."""
+    rows = [{"detector": r["detector"], **{k: v for k, v in r["runtime_s"].items()}} for r in runs]
+    t = pd.DataFrame(rows).groupby("detector").agg(["mean", "max"])
+    t.columns = [f"{a} s ({b})" for a, b in t.columns]
+    t = t.reset_index()
+    t.to_csv(tables_dir / "runtime.csv", index=False, float_format="%.2f")
+    return ["## Runtime per detector (seconds per round)", "",
+            "`fit`: fitting on train (GMM includes fitting every reg_covar value and choosing on calib_norm; the "
+            "baseline's fit is the classifier, which hybrid mode reuses for all detectors). `score`: scoring "
+            "calib_norm, calib_final and test, and normalising. `bootstrap`: all CIs for both modes.", "",
+            md(t, ".1f"), ""]
+
+
 def md(df, floatfmt=".3f"):
     cols = list(df.columns)
     out = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
