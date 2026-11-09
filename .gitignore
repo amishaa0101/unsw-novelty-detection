@@ -1,0 +1,18 @@
+# Data (large, not ours to redistribute)
+data/
+complete_dataset/
+
+# Environment
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Large or regenerable outputs
+outputs/runs/
+outputs/logs/
+
+# Local tool instructions, not part of the project
+CLAUDE.md
+.claude/

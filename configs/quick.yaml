@@ -1,0 +1,7 @@
+# Small smoke-test config: same as default.yaml except the keys below.
+base: default.yaml
+subsample_frac: 0.1         # about 10% of rows, stratified by attack_cat
+attack_types: [DoS, Shellcode]
+bootstrap:
+  n_resamples: 100
+  ci: 0.95

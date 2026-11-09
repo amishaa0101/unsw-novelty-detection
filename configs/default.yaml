@@ -1,0 +1,35 @@
+seed: 42
+data_dir: data/raw
+processed_dir: data/processed
+subsample_frac: 1.0         # 1.0 = use all rows
+conflict_policy: drop       # drop | majority
+split: {train: 0.6, calib_norm: 0.1, calib_final: 0.1, test: 0.2}
+shortcut_features: [sttl, dttl, ct_state_ttl]   # final list confirmed after the shortcut audit
+feature_settings: [with_shortcut, without_shortcut]
+attack_types: [Fuzzers, Analysis, Backdoor, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms]
+preprocess:
+  log1p: true
+  proto_top_n: 10           # keep top N proto values (by training frequency), rest -> "other"
+detectors: [gmm, pca, knn, baseline]
+gmm:
+  k_grid: [1, 2, 4, 8, 16]
+  covariance_type: diag
+  n_init: 3
+  reg_covar: 1.0e-4
+  max_fit_rows: 20000       # random subsample per class for speed; logged when used
+pca:
+  explained_variance: 0.95
+knn:
+  k: 5
+  index: flat               # flat = exact search
+baseline:
+  model: hist_gradient_boosting
+calibration:
+  alphas: [0.005, 0.01, 0.05, 0.1]
+  main_alpha: 0.01
+  bh_q: 0.01
+  log_eps: 1.0e-12          # PCA and kNN scores use log(score + log_eps)
+  min_scale: 1.0e-6         # IQR below this falls back to std, then to 1.0
+bootstrap:
+  n_resamples: 1000
+  ci: 0.95
