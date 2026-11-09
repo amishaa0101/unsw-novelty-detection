@@ -85,6 +85,19 @@ def test_bh_matches_scipy():
             assert np.array_equal(ours, ref)
 
 
+def test_bonferroni_min_controls_rate():
+    from src.calibration import decide_bonferroni_min
+    rng = np.random.default_rng(4)
+    n = 200_000
+    P1 = rng.uniform(size=n)
+    P2 = np.clip(P1 + rng.normal(0, 0.3, n), 0, 1)  # dependent on P1, still roughly uniform-ish
+    P2 = (np.argsort(np.argsort(P2)) + 1) / n          # make P2 exactly uniform by ranks
+    for a in [0.01, 0.05, 0.1]:
+        rate = (decide_bonferroni_min(P1, P2, np.zeros(n, dtype=int), a) == UNKNOWN).mean()
+        assert rate <= a + 3 * np.sqrt(a / n), (a, rate)
+    assert decide_bonferroni_min(np.array([0.004, 0.5]), np.array([0.9, 0.006]), np.array([1, 2]), 0.01).tolist() == [UNKNOWN, 2]
+
+
 def test_decide():
     P = np.array([0.001, 0.5, 0.01])
     assert decide(P, np.array([3, 4, 5]), 0.01).tolist() == [UNKNOWN, 4, UNKNOWN]

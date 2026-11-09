@@ -50,6 +50,15 @@ def decide(P, best, alpha):
     return np.where(P <= alpha, UNKNOWN, best)
 
 
+def decide_bonferroni_min(P1, P2, labels, alpha):
+    """unknown if min(P1, P2) <= alpha / 2, else the given label.
+
+    Bonferroni: P(min <= alpha/2) <= P(P1 <= alpha/2) + P(P2 <= alpha/2) <= alpha for a known flow,
+    with no assumption about how the two p-values depend on each other.
+    """
+    return np.where(np.minimum(P1, P2) <= alpha / 2, UNKNOWN, labels)
+
+
 def benjamini_hochberg(p, q):
     """Return a boolean mask of rejected hypotheses (flagged as unknown) at FDR level q."""
     p = np.asarray(p)

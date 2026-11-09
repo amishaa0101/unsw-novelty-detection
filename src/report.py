@@ -128,6 +128,61 @@ def bh_levels(runs, mode="hybrid"):
     return pd.DataFrame(rows)
 
 
+def combo_section(run_dir, tables_dir):
+    """Markdown lines for the combo_<D> detectors (built by scripts/run_combo.py from saved p-values)."""
+    combo = load_runs(Path(run_dir) / "combo")
+    if not combo:
+        return []
+    main = {(r["hidden"], r["setting"], r["detector"]): r for r in load_runs(run_dir)}
+    cfg = combo[0]["config"]
+    alpha = cfg["calibration"]["main_alpha"]
+    key = f"combo|alpha={alpha}"
+    rows, cal_rows, cls_rows = [], [], []
+    for r in combo:
+        m, ci = r["metrics"][key], r["metrics_ci"][key]
+        d = r["detector"].replace("combo_", "")
+        alone = main[(r["hidden"], r["setting"], d)]["metrics"][f"hybrid|alpha={alpha}"]["frac_unknown"]
+        base = main[(r["hidden"], r["setting"], "baseline")]["metrics"][f"hybrid|alpha={alpha}"]["frac_unknown"]
+        rows.append({"hidden": r["hidden"], "setting": r["setting"], "detector": r["detector"],
+                     "detection": ci_text(m["detection_rate"], ci["detection_rate"]),
+                     "unknown": ci_text(m["frac_unknown"], ci["frac_unknown"]),
+                     "unknown (D alone)": f"{alone:.3f}", "unknown (baseline alone)": f"{base:.3f}",
+                     "false alarm": ci_text(m["false_alarm_rate"], ci["false_alarm_rate"]),
+                     "novelty AUROC (vs known)": ci_text(r["auroc"]["novelty_auroc_vs_known"],
+                                                         r["auroc_ci"]["novelty_auroc_vs_known"]),
+                     "_unk": m["frac_unknown"], "_det": m["detection_rate"], "_fa": m["false_alarm_rate"],
+                     "_nov": r["auroc"]["novelty_auroc_vs_known"], "_alone": alone, "_base": base})
+        for a in cfg["calibration"]["alphas"]:
+            cal_rows.append({"detector": r["detector"], "alpha": a,
+                             "rate": r["metrics"][f"combo|alpha={a}"]["false_unknown_rate_known"]})
+        for c, v in r["false_unknown_by_class"][key].items():
+            cls_rows.append({"class": c, "rate": v})
+    t = pd.DataFrame(rows)
+    t.drop(columns=[c for c in t.columns if c.startswith("_")]).to_csv(tables_dir / "combo_results.csv", index=False)
+    means = t.groupby(["setting", "detector"])[["_det", "_unk", "_alone", "_base", "_fa", "_nov"]].mean().reset_index()
+    means.columns = ["setting", "detector", "detection", "unknown", "unknown (detector alone)",
+                     "unknown (baseline alone)", "false alarm", "novelty AUROC (vs known)"]
+    cal = pd.DataFrame(cal_rows)
+    over = cal.assign(over=cal.rate > cal.alpha).groupby(["detector", "alpha"])["over"].sum()
+    cal = cal.groupby(["detector", "alpha"])["rate"].agg(["mean", "min", "max"]).join(over).reset_index()
+    cal = cal.rename(columns={"over": "rounds above alpha"})
+    cls = pd.DataFrame(cls_rows).groupby("class")["rate"].agg(["mean", "max"]).reset_index().sort_values("max", ascending=False)
+
+    lines = ["## Combined detectors (combo_<D>), from saved p-values, no re-fitting", "",
+             f"Rule: a flow is unknown if min(P_D(x), P_baseline(x)) <= alpha / 2 (Bonferroni), otherwise it gets "
+             f"the classifier's label. By Bonferroni the false unknown rate on known flows is at most alpha, with no "
+             f"assumption about how the two p-values depend on each other. Novelty AUROC uses -min(P_D, P_baseline) "
+             f"as the score. Main alpha = {alpha}; 95% bootstrap CIs.", ""]
+    for setting in cfg["feature_settings"]:
+        s = t[t.setting == setting]
+        lines += [f"### {setting}", "", md(s.drop(columns=[c for c in s.columns if c.startswith("_")] + ["setting"])), ""]
+    lines += ["Means over hidden attack types:", "", md(means), "",
+              "Calibration check: pooled false unknown rate on known test rows over all rounds, and the number of "
+              "rounds where it is above alpha:", "", md(cal, ".4f"), "",
+              f"Per known class at alpha = {alpha}, over all rounds and combos:", "", md(cls, ".4f"), ""]
+    return lines
+
+
 def md(df, floatfmt=".3f"):
     cols = list(df.columns)
     out = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]

@@ -56,7 +56,9 @@ def main():
                 seed_dirs.append(d)
             else:
                 print(f"Skipping incomplete seed run {d.name}")
-    report.build(run_dir, results, tables, figures, seed_dirs=seed_dirs)
+    tables.mkdir(parents=True, exist_ok=True)
+    extra = [report.combo_section(run_dir, tables)] if (run_dir / "combo").exists() else []
+    report.build(run_dir, results, tables, figures, seed_dirs=seed_dirs, extra_sections=extra)
     print("Saved", results, f"({label})")
 
 
