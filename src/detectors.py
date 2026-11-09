@@ -5,6 +5,16 @@ from sklearn.metrics import roc_auc_score
 from sklearn.mixture import GaussianMixture
 
 
+def k_cap(n_rows, n_features):
+    """Rule A: K <= (rows + 1) / (2d + 1), minimum 1.
+
+    A diag component has 2d + 1 parameters (d means, d variances, 1 weight). The cap keeps
+    roughly as many rows per component as parameters, so no component is left with a handful
+    of rows and tiny, unreliable variances. BIC then chooses K within this cap.
+    """
+    return max(1, (n_rows + 1) // (2 * n_features + 1))
+
+
 class GMMDetector:
     """Gaussian mixture fitted with EM. Score = negative log likelihood."""
 
@@ -23,9 +33,8 @@ class GMMDetector:
         if self.subsampled:  # speed: fit on a random subsample of a big class
             rng = np.random.default_rng(self.seed)
             X = X[rng.choice(len(X), self.max_fit_rows, replace=False)]
-        # Rule: at most one component per 20 rows, so every component has enough data.
-        k_max = max(1, len(X) // 20)
-        grid = [k for k in self.k_grid if k <= k_max] or [1]
+        self.k_max = k_cap(len(X), X.shape[1])
+        grid = [k for k in self.k_grid if k <= self.k_max] or [1]
         self.bic = {}
         best = None
         for k in grid:
@@ -44,7 +53,7 @@ class GMMDetector:
         return -self.model.score_samples(np.asarray(X, dtype=np.float64))
 
     def info(self):
-        return {"k": self.k, "bic": self.bic, "n_rows": self.n_rows, "subsampled": self.subsampled,
+        return {"k": self.k, "k_max": self.k_max, "bic": self.bic, "n_rows": self.n_rows, "subsampled": self.subsampled,
                 "reg_covar": self.reg_covar, "component_sizes": self.component_sizes}
 
     def nll_breakdown(self, X, onehot_mask):

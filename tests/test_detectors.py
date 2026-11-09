@@ -51,9 +51,20 @@ def test_knn_distance_is_not_squared():
     assert det.score(np.array([[3.0, 4.0]], dtype=np.float32))[0] == pytest.approx(5.0)
 
 
+def test_k_cap_rule_a():
+    from src.detectors import k_cap
+    assert k_cap(95, 69) == 1        # Worms-sized class: (96) // 139 = 0 -> minimum 1
+    assert k_cap(868, 69) == 6       # Shellcode-sized: 869 // 139
+    assert k_cap(20000, 69) == 143   # big class: cap far above the K grid
+    assert k_cap(0, 10) == 1
+
+
 def test_gmm_k_capped_by_rows():
-    det = GMMDetector([1, 2, 4, 8, 16], n_init=1, seed=0).fit(blob(n=50))
-    assert set(det.bic) <= {1, 2}  # 50 // 20 = 2
+    # 2D data: 2d + 1 = 5 parameters per component. 24 rows -> cap 25 // 5 = 5, so K in {1, 2, 4}.
+    det = GMMDetector([1, 2, 4, 8, 16], n_init=1, seed=0).fit(blob(n=24))
+    assert det.k_max == 5 and set(det.bic) == {1, 2, 4} and det.k <= 5
+    det = GMMDetector([1, 2, 4], n_init=1, seed=0).fit(blob(n=8))  # 9 // 5 = 1
+    assert set(det.bic) == {1}
 
 
 def test_gmm_nll_breakdown_adds_up_for_one_component():

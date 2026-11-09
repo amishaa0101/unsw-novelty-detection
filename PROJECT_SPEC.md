@@ -234,7 +234,7 @@ Common interface for one class's detector: `fit(X)` and `score(X)`, where **a hi
 
 1. **GMMDetector**
    - Choose K from `k_grid` by **lowest BIC** on that class's training data.
-   - Cap K so each component has enough data: K at most `n_rows / 20` (and at least 1). Document this rule.
+   - **Cap K with Rule A** (decided before the full run): `K <= (rows + 1) / (2d + 1)`, minimum 1, where rows = rows used for fitting and d = number of features; BIC then chooses K within this cap. A diag component has 2d + 1 parameters (d means, d variances, 1 weight). Justification: with diagonal covariance, each mean and variance is estimated separately from all of a component's rows, so K = 1 is well-posed even for Worms. The real risk is too few rows per component (for example Backdoor's 8-row component under the earlier `rows / 20` cap), which gives tiny, unreliable variances. Rule A guarantees roughly as many rows per component as parameters. Log the chosen K, the cap and the component sizes per class per round.
    - `covariance_type: diag` by default, `n_init: 3`, `random_state` from the seed.
    - **reg_covar is chosen per round** from `reg_covar_grid` using calib_norm only: for each value, fit the per-class GMMs on train, score calib_norm, and for each known class c compute the AUROC of the class-c score separating calib_norm rows of other known classes (positive) from rows of class c (negative). Pick the value with the highest mean AUROC over classes and log the whole table. Why: after one-hot encoding some 0/1 columns are constant within a class, so a diag Gaussian has variance = reg_covar there and any flow with a different value gets a penalty of about 1/(2 reg_covar), which can dominate the score.
    - **NLL breakdown**: for the most responsible component, the diag Gaussian NLL splits into a sum over columns. Report, for sample rows, the share of the squared-distance part that comes from one-hot columns vs numeric columns.
@@ -289,7 +289,9 @@ P(x) = (1 + #{ i in calib_final : T_i >= T(x) }) / (n_final + 1)
 
 Implement with sorting and `np.searchsorted` (not a Python loop over rows).
 
-**Decision rule** at level alpha: output **unknown** if `P(x) <= alpha`, else `best_class(x)`.
+**Decision rule** at level alpha: output **unknown** if `P(x) <= alpha`, else a known label. Two labelling modes, both reported for every detector, from the same scores (no extra fitting):
+- `detector_only`: label = `best_class(x)`.
+- `hybrid` (**main**): label = the class predicted by the baseline classifier (Phase 6), trained on the same train split. Why: the per-class detectors are good at known vs unknown but poor at choosing among known classes (for example Normal rows best-matching Fuzzers). The unknown decision is identical in both modes.
 
 **Guarantee and its limits.** `calib_final` rows and known test rows are exchangeable draws from the same known-traffic mix, and nothing in T was fitted on `calib_final`, so for a known test flow `Prob(P(x) <= alpha) <= alpha`. This guarantee is **marginal over the known-traffic mix**, not per class: a small class (for example Worms) can have a false unknown rate above alpha while big classes stay below it. So we report the false unknown rate **per known class** as well, and list this in the limitations.
 
@@ -326,8 +328,14 @@ On **known attack** test rows:
 - `known_attack_correct`: share assigned their true class
 - `known_attack_flagged_unknown`: share flagged unknown
 
-Threshold-free:
-- `auroc_hidden_vs_normal`: AUROC using `T(x)` (for the baseline, `s(x)`) as the novelty score, hidden attack rows (positive) vs Normal test rows (negative).
+Threshold-free (hidden attack rows are always the positives):
+- `novelty_auroc_vs_known`: score `T(x)` (baseline: `s(x)`), negatives = all known-class test rows. Measures how well the novelty statistic separates the hidden attack from everything known.
+- `novelty_auroc_vs_normal`: same score, negatives = Normal test rows only.
+- `alarm_auroc`: score `z_Normal(x)`, the normalised Normal-class score ("un-Normal-ness"), negatives = Normal test rows. Measures how well the flow can be told apart from Normal traffic at all, whether or not it looks novel. Baseline: `1 - P(Normal)` from the classifier, since it has no z_Normal.
+
+Metrics are computed for both labelling modes at every alpha and with BH.
+
+**Confusion matrix** per run and per mode at `main_alpha`: true class (including the hidden one) x assigned label (known classes + "unknown"), saved in the run JSON.
 
 For BH: the same outcome fractions, plus the empirical false discovery proportion (among flows flagged unknown, the share that are actually known classes).
 
@@ -347,6 +355,9 @@ Save to `outputs/figures/` (PNG, 200 dpi, readable labels) and `outputs/tables/`
 8. PCA explained variance curve for the Normal class.
 9. Runtime table per detector.
 10. Main results table: per hidden attack and detector, detection rate [95% CI], false alarm rate [95% CI], and AUROC, for both feature settings.
+11. Confusion matrix heatmaps (hybrid mode, main alpha) for the DoS and Worms rounds, one panel per detector.
+
+`results.md` must explain each AUROC in one sentence (see Phase 7 metrics).
 
 Then generate `outputs/results.md` automatically from the saved run files: tables plus short factual sentences (for example "Without shortcut features, the mean detection rate of X fell from A to B"). Every number must come from the saved outputs. No interpretation beyond what the numbers show; put open questions in a "Notes for the authors" section.
 
@@ -379,7 +390,7 @@ Include, in simple English:
 3. The pipeline, step by step.
 4. Which course topics are used where: GMM and EM; SVD, PCA, low rank; nearest neighbours and FAISS; hypothesis testing, conformal p-values, multiple testing (BH); bootstrap; data cleaning and shortcut feature analysis.
 5. Key results, copied from `outputs/results.md` (generated numbers only).
-6. Limitations: lab data from 2015; only 9 attack types; tiny classes (for example Worms) give wide CIs; the conformal guarantee is marginal over the known-traffic mix, so a small known class can have a false unknown rate above alpha (report the per-class rates).
+6. Limitations: BIC over-selects K because 0/1 one-hot columns are near-constant within small groups, which inflates the likelihood (Rule A caps this); future work could model categorical columns separately. Lab data from 2015; only 9 attack types; tiny classes (for example Worms) give wide CIs; the conformal guarantee is marginal over the known-traffic mix, so a small known class can have a false unknown rate above alpha (report the per-class rates).
 
 ---
 
