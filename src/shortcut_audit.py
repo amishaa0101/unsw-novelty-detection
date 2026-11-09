@@ -94,10 +94,24 @@ def value_breakdown(df, feature, min_rows=50):
     return g[g["rows"] >= min_rows].fillna(0)
 
 
-def report(table, attack_types, df, seed):
+def raw_vs_dedup(raw_table, table, n=15):
+    """Top n features by deduplicated overall AUROC, with the same numbers on the raw data."""
+    a = table.set_index("feature")
+    b = raw_table.set_index("feature")
+    top = a.index[:n]
+    return pd.DataFrame({
+        "auroc_overall_raw": b.loc[top, "auroc_overall"],
+        "auroc_overall_dedup": a.loc[top, "auroc_overall"],
+        "difference": a.loc[top, "auroc_overall"] - b.loc[top, "auroc_overall"],
+        "max_attack_raw": b.loc[top, "auroc_max_attack"].round(3).astype(str) + " (" + b.loc[top, "max_attack"] + ")",
+        "max_attack_dedup": a.loc[top, "auroc_max_attack"].round(3).astype(str) + " (" + a.loc[top, "max_attack"] + ")",
+    })
+
+
+def report(table, attack_types, df, seed, cfg, raw_table, n_raw_rows):
     """Markdown with the ranked table, the suspect list and our classification.
 
-    Every number comes from `table` or is computed here from `df`.
+    Every number comes from `table` / `raw_table` or is computed here from `df`.
     """
     def fmt(v):
         return f"{v:.3f}"
@@ -138,6 +152,21 @@ def report(table, attack_types, df, seed):
         out.append(f"| `{f}` | {kind} | {fmt(r['auroc_overall'])} | {fmt(r['auroc_max_attack'])} ({r['max_attack']}) | {why} |")
     out.append("")
 
+    # ---- Decisions taken at Checkpoint 2 (two separate decisions: lab artifacts vs noise)
+    out += ["## Decisions (Checkpoint 2)", "",
+            "**1. Lab artifacts (shortcut features)**, removed in the `without_shortcut` setting: "
+            + ", ".join(f"`{f}`" for f in cfg["shortcut_features"]) + ". "
+            "The TTL features identify the sending and receiving machines. `is_sm_ips_ports` = 1 occurs only in "
+            "the lab's ARP Normal traffic, and ARP is already captured by `proto`, so removing it costs nothing.", "",
+            "**2. Noise features**, dropped in **every** setting: "
+            + ", ".join(f"`{f}`" for f in cfg["noise_features"]) + ". "
+            "This is not a shortcut decision. They are random TCP sequence numbers; their only signal "
+            "(zero vs non-zero) is already in `swin`, and a random column only blurs distances for kNN and GMM.", "",
+            "**3. Round-trip time** (" + ", ".join(f"`{f}`" for f in cfg["strict_extra_features"]) + "): "
+            "round-trip time mixes behaviour (how a host answers) with network distance (where the hosts sit in "
+            "the lab), so it is left unclassified and tested by a sensitivity analysis instead: an optional "
+            "`strict` setting removes it on top of the shortcut features.", ""]
+
     # ---- Evidence for the TTL features: AUROC hides a one-sided pattern
     is_attack = (df["attack_cat"] != "Normal").astype(int).to_numpy()
     deep = {f: cv_auroc(df[[f]].to_numpy(dtype=float), is_attack, seed, max_depth=None)[0]
@@ -167,6 +196,22 @@ def report(table, attack_types, df, seed):
                    f"{fmt(t.loc[f, 'auroc_overall'])}; of only \"is zero\": {fmt(auc_zero)}; of the value among "
                    f"non-zero rows: {fmt(auc_nz)}. \"Non-zero\" agrees with `swin` > 0 on {100 * same_as_swin:.1f}% of rows.")
     out.append("")
+
+    # ---- Same audit on the raw data (before dedup)
+    cmp = raw_vs_dedup(raw_table, table)
+    out += ["## Raw vs deduplicated data (top 15 features by deduplicated overall AUROC)", "",
+            f"Same audit run on the raw data: both files combined, labels cleaned, `id` dropped, no "
+            f"deduplication ({n_raw_rows:,} rows), against the deduplicated data ({len(df):,} rows). "
+            "`difference` = dedup minus raw.", "",
+            "| feature | overall raw | overall dedup | difference | highest single-attack raw | highest single-attack dedup |",
+            "|---|---|---|---|---|---|"]
+    out += [f"| `{f}` | {fmt(r.auroc_overall_raw)} | {fmt(r.auroc_overall_dedup)} | {r.difference:+.3f} | "
+            f"{r.max_attack_raw} | {r.max_attack_dedup} |" for f, r in cmp.iterrows()]
+    sus_raw = raw_table[raw_table["suspect_any_attack"]]["feature"].tolist()
+    out += ["", f"- Suspect overall on raw data: {int(raw_table['suspect_overall'].sum())} features: "
+            + (", ".join(f"`{f}`" for f in raw_table.loc[raw_table['suspect_overall'], 'feature']) or "none"),
+            f"- Suspect for at least one attack type on raw data: {len(sus_raw)} features: "
+            + (", ".join(f"`{f}`" for f in sus_raw) or "none"), ""]
 
     out += ["## Ranked table (rows ending in ** are suspect overall)", ""] + lines + [""]
     return "\n".join(out)

@@ -21,7 +21,7 @@ Run from the repo root with the venv Python (`.venv\Scripts\python`).
 | Task | Command | Status |
 |---|---|---|
 | audit | `python scripts/run_audit.py` | Phase 1 |
-| test | `python -m pytest tests` | later phases |
-| quick | `python scripts/run_experiments.py --config configs/quick.yaml` | later phases |
-| experiments | `python scripts/run_experiments.py --config configs/default.yaml` | later phases |
+| test | `python -m pytest tests` | works |
+| quick | `python scripts/run_experiments.py --config configs/quick.yaml` | works (smoke test only) |
+| experiments | `python scripts/run_experiments.py --config configs/default.yaml` | not run yet |
 | figures | `python scripts/make_figures.py` | later phases |

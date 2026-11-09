@@ -147,8 +147,10 @@ seed: 42
 data_dir: data/raw
 conflict_policy: drop
 split: {train: 0.6, calib_norm: 0.1, calib_final: 0.1, test: 0.2}
-shortcut_features: [sttl, dttl, ct_state_ttl]   # final list confirmed after the shortcut audit
-feature_settings: [with_shortcut, without_shortcut]
+shortcut_features: [sttl, dttl, ct_state_ttl, is_sm_ips_ports]   # final (Checkpoint 2)
+noise_features: [stcpb, dtcpb]                  # dropped in every setting (Checkpoint 2)
+strict_extra_features: [tcprtt, synack, ackdat] # removed only in the optional "strict" setting
+feature_settings: [with_shortcut, without_shortcut]   # "strict" added later, after the main runs work
 attack_types: [Fuzzers, Analysis, Backdoor, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms]
 preprocess:
   log1p: true
@@ -158,7 +160,8 @@ gmm:
   k_grid: [1, 2, 4, 8, 16]
   covariance_type: diag
   n_init: 3
-  reg_covar: 1.0e-4
+  reg_covar_grid: [1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1]   # chosen on calib_norm (Phase 4)
+  nll_breakdown_rows: 200
   max_fit_rows: 20000       # random subsample per class for speed; log when used
 pca:
   explained_variance: 0.95
@@ -209,9 +212,15 @@ In `src/shortcut_audit.py`:
 
 **CHECKPOINT 2.** Show me the ranked list and your reasoning. I will decide the final `shortcut_features` list. Default: `sttl, dttl, ct_state_ttl`.
 
+**Decisions (Checkpoint 2):**
+- `shortcut_features`: `sttl, dttl, ct_state_ttl, is_sm_ips_ports` (lab artifacts). `is_sm_ips_ports = 1` occurs only in lab ARP Normal traffic and ARP is already captured by `proto`, so removal is free.
+- `noise_features`: `stcpb, dtcpb`, dropped in **both** settings. This is a noise decision, not a shortcut decision: random sequence numbers whose only signal (zero vs non-zero) is already in `swin`.
+- `tcprtt, synack, ackdat`: kept in both main settings. Optional third setting `strict` = without_shortcut minus these three, run only after the main experiments work and the runtime is known.
+- Also audit the raw data before dedup and add a raw vs deduplicated AUROC table for the top 15 features (facts only).
+
 ### Phase 3: Preprocessing (`src/preprocess.py`)
 A `Preprocessor` class with `fit(train_df)` and `transform(df)`:
-- Select feature columns (all columns except labels, and minus shortcut features when the setting is `without_shortcut`).
+- Select feature columns: all columns except labels and metadata, minus `noise_features` (always), minus `shortcut_features` in `without_shortcut` and `strict`, minus `strict_extra_features` in `strict`.
 - Numeric features: apply `log1p` to non-negative numeric columns (check for negatives; if a column has negative values, skip the log and report it). Then standardise with mean and standard deviation **computed on training data only**. Guard against zero standard deviation.
 - Text features:
   - `proto`: keep the top N values by training frequency, map everything else to `other`.
@@ -226,7 +235,9 @@ Common interface for one class's detector: `fit(X)` and `score(X)`, where **a hi
 1. **GMMDetector**
    - Choose K from `k_grid` by **lowest BIC** on that class's training data.
    - Cap K so each component has enough data: K at most `n_rows / 20` (and at least 1). Document this rule.
-   - `covariance_type: diag` by default, `n_init: 3`, `reg_covar` from config, `random_state` from the seed.
+   - `covariance_type: diag` by default, `n_init: 3`, `random_state` from the seed.
+   - **reg_covar is chosen per round** from `reg_covar_grid` using calib_norm only: for each value, fit the per-class GMMs on train, score calib_norm, and for each known class c compute the AUROC of the class-c score separating calib_norm rows of other known classes (positive) from rows of class c (negative). Pick the value with the highest mean AUROC over classes and log the whole table. Why: after one-hot encoding some 0/1 columns are constant within a class, so a diag Gaussian has variance = reg_covar there and any flow with a different value gets a penalty of about 1/(2 reg_covar), which can dominate the score.
+   - **NLL breakdown**: for the most responsible component, the diag Gaussian NLL splits into a sum over columns. Report, for sample rows, the share of the squared-distance part that comes from one-hot columns vs numeric columns.
    - If the class has more than `max_fit_rows` rows, fit on a random subsample (log this).
    - Score = `-score_samples(X)` (negative log likelihood).
    - Never use `warm_start=True`.

@@ -24,6 +24,14 @@ Each feature on its own is given to a depth-2 decision tree. The score is the me
 | `stcpb` | noise | 0.523 | 0.802 (Generic) | Random initial TCP sequence number chosen by the sender. Its only signal is whether it is zero (no TCP handshake), which swin already carries. |
 | `dtcpb` | noise | 0.523 | 0.802 (Generic) | Same as stcpb for the reply direction. |
 
+## Decisions (Checkpoint 2)
+
+**1. Lab artifacts (shortcut features)**, removed in the `without_shortcut` setting: `sttl`, `dttl`, `ct_state_ttl`, `is_sm_ips_ports`. The TTL features identify the sending and receiving machines. `is_sm_ips_ports` = 1 occurs only in the lab's ARP Normal traffic, and ARP is already captured by `proto`, so removing it costs nothing.
+
+**2. Noise features**, dropped in **every** setting: `stcpb`, `dtcpb`. This is not a shortcut decision. They are random TCP sequence numbers; their only signal (zero vs non-zero) is already in `swin`, and a random column only blurs distances for kNN and GMM.
+
+**3. Round-trip time** (`tcprtt`, `synack`, `ackdat`): round-trip time mixes behaviour (how a host answers) with network distance (where the hosts sit in the lab), so it is left unclassified and tested by a sensitivity analysis instead: an optional `strict` setting removes it on top of the shortcut features.
+
 ## TTL features: what the AUROC does not show
 
 No TTL feature reaches the threshold overall, but they rank near the top. An unlimited-depth tree gives overall AUROC `sttl` 0.846 (depth 2: 0.846), `dttl` 0.832 (depth 2: 0.832), `ct_state_ttl` 0.853 (depth 2: 0.852), so the limit is in the values themselves, not the tree: some TTL values occur only in Normal traffic, while the values most attacks use are shared with part of Normal. Values with at least 50 rows:
@@ -63,6 +71,31 @@ No TTL feature reaches the threshold overall, but they rank near the top. An unl
 - `is_sm_ips_ports` = 1 in 649 rows; classes: {'Normal': 649}; proto: {'arp': 643, 'tcp': 6}.
 - `stcpb`: zero in 24.2% of rows. AUROC of the value: 0.523; of only "is zero": 0.523; of the value among non-zero rows: 0.500. "Non-zero" agrees with `swin` > 0 on 98.9% of rows.
 - `dtcpb`: zero in 24.2% of rows. AUROC of the value: 0.523; of only "is zero": 0.523; of the value among non-zero rows: 0.500. "Non-zero" agrees with `swin` > 0 on 98.9% of rows.
+
+## Raw vs deduplicated data (top 15 features by deduplicated overall AUROC)
+
+Same audit run on the raw data: both files combined, labels cleaned, `id` dropped, no deduplication (257,673 rows), against the deduplicated data (151,239 rows). `difference` = dedup minus raw.
+
+| feature | overall raw | overall dedup | difference | highest single-attack raw | highest single-attack dedup |
+|---|---|---|---|---|---|
+| `ct_state_ttl` | 0.830 | 0.852 | +0.022 | 0.943 (Generic) | 0.95 (Generic) |
+| `sttl` | 0.835 | 0.846 | +0.011 | 0.863 (Exploits) | 0.963 (Analysis) |
+| `tcprtt` | 0.750 | 0.833 | +0.084 | 0.841 (Generic) | 0.897 (Exploits) |
+| `synack` | 0.749 | 0.833 | +0.083 | 0.841 (Generic) | 0.896 (Exploits) |
+| `dttl` | 0.861 | 0.832 | -0.029 | 0.927 (Generic) | 0.935 (Generic) |
+| `ackdat` | 0.750 | 0.827 | +0.078 | 0.841 (Generic) | 0.887 (Exploits) |
+| `dinpkt` | 0.841 | 0.793 | -0.047 | 0.926 (Generic) | 0.924 (Generic) |
+| `rate` | 0.862 | 0.784 | -0.078 | 0.958 (Generic) | 0.934 (Generic) |
+| `dload` | 0.839 | 0.774 | -0.065 | 0.924 (Generic) | 0.912 (Generic) |
+| `dur` | 0.858 | 0.765 | -0.093 | 0.952 (Generic) | 0.931 (Generic) |
+| `sjit` | 0.746 | 0.743 | -0.003 | 0.867 (Generic) | 0.847 (Generic) |
+| `sload` | 0.852 | 0.742 | -0.110 | 0.969 (Generic) | 0.912 (Generic) |
+| `sinpkt` | 0.788 | 0.733 | -0.055 | 0.91 (Generic) | 0.879 (Generic) |
+| `ct_srv_dst` | 0.714 | 0.728 | +0.013 | 0.932 (Generic) | 0.892 (Worms) |
+| `djit` | 0.732 | 0.720 | -0.012 | 0.849 (Generic) | 0.832 (Generic) |
+
+- Suspect overall on raw data: 0 features: none
+- Suspect for at least one attack type on raw data: 7 features: `rate`, `dur`, `sload`, `smean`, `sbytes`, `ct_dst_sport_ltm`, `ct_src_dport_ltm`
 
 ## Ranked table (rows ending in ** are suspect overall)
 

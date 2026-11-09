@@ -4,7 +4,13 @@ processed_dir: data/processed
 subsample_frac: 1.0         # 1.0 = use all rows
 conflict_policy: drop       # drop | majority
 split: {train: 0.6, calib_norm: 0.1, calib_final: 0.1, test: 0.2}
-shortcut_features: [sttl, dttl, ct_state_ttl]   # final list confirmed after the shortcut audit
+# Lab artifacts, removed in without_shortcut and strict (decided at Checkpoint 2).
+shortcut_features: [sttl, dttl, ct_state_ttl, is_sm_ips_ports]
+# Random TCP sequence numbers: noise, dropped in EVERY setting (a separate decision from shortcuts).
+noise_features: [stcpb, dtcpb]
+# Round-trip time mixes behaviour with network distance; removed only in the optional strict setting.
+strict_extra_features: [tcprtt, synack, ackdat]
+# Optional third setting: strict = without_shortcut minus strict_extra_features. Not run until the main runs work.
 feature_settings: [with_shortcut, without_shortcut]
 attack_types: [Fuzzers, Analysis, Backdoor, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms]
 preprocess:
@@ -15,7 +21,8 @@ gmm:
   k_grid: [1, 2, 4, 8, 16]
   covariance_type: diag
   n_init: 3
-  reg_covar: 1.0e-4
+  reg_covar_grid: [1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1]   # chosen per round on calib_norm only
+  nll_breakdown_rows: 200   # rows per group for the one-hot vs numeric NLL breakdown
   max_fit_rows: 20000       # random subsample per class for speed; logged when used
 pca:
   explained_variance: 0.95

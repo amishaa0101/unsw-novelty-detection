@@ -232,7 +232,11 @@ def main():
     table = shortcut_audit.run_audit(clean, cfg["attack_types"], cfg["seed"])
     table.to_csv(audit_dir / "shortcut_audit.csv", index=False, float_format="%.4f")
     shortcut_audit.plot_top(table, audit_dir / "shortcut_audit_top20.png")
-    (audit_dir / "shortcut_audit.md").write_text(shortcut_audit.report(table, cfg["attack_types"], clean, cfg["seed"]), encoding="utf-8")
+    print("Running the same audit on the raw data (before dedup) ...")
+    raw_table = shortcut_audit.run_audit(raw, cfg["attack_types"], cfg["seed"])
+    raw_table.to_csv(audit_dir / "shortcut_audit_raw.csv", index=False, float_format="%.4f")
+    text = shortcut_audit.report(table, cfg["attack_types"], clean, cfg["seed"], cfg, raw_table, len(raw))
+    (audit_dir / "shortcut_audit.md").write_text(text, encoding="utf-8")
     print(f"Saved {audit_dir / 'shortcut_audit.csv'}, shortcut_audit_top20.png and shortcut_audit.md")
 
 
