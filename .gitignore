@@ -16,3 +16,9 @@ outputs/logs/
 # Local tool instructions, not part of the project
 CLAUDE.md
 .claude/
+
+# Quick smoke-test outputs (never results)
+outputs/figures/quick/
+outputs/tables/quick/
+outputs/results_quick.md
+outputs/audit_run.log
