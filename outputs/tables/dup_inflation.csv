@@ -1,0 +1,5 @@
+data,setting,n_rows,n_test,accuracy,macro_f1,test_rows_with_exact_copy_in_train,test_rows_with_copy_in_train_under_another_label
+raw (duplicates and conflicts kept),with_shortcut,257673,51535,0.8151,0.5155,0.4510,0.1550
+raw (duplicates and conflicts kept),without_shortcut,257673,51535,0.8108,0.5010,0.4510,0.1550
+deduplicated,with_shortcut,151239,30248,0.8576,0.5931,0.0000,0.0000
+deduplicated,without_shortcut,151239,30248,0.8532,0.5869,0.0000,0.0000

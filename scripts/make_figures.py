@@ -81,6 +81,9 @@ def main():
     extra = [report.runtime_section(runs, tables)]
     if (run_dir / "combo").exists():
         extra.append(report.combo_section(run_dir, tables))
+    dup_csv = ROOT / "outputs" / "tables" / "dup_inflation.csv"
+    if full and dup_csv.exists():
+        extra.append(report.dup_inflation_section(dup_csv))
     report.build(run_dir, results, tables, figures, seed_dirs=seed_dirs, extra_sections=extra)
     print("Saved", results, f"({label})")
 

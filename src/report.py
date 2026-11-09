@@ -183,6 +183,18 @@ def combo_section(run_dir, tables_dir):
     return lines
 
 
+def dup_inflation_section(csv_path):
+    """Facts from scripts/run_dup_inflation.py (no LOAO; all classes known)."""
+    t = pd.read_csv(csv_path)
+    return ["## Duplicate-inflation check (optional experiment, no LOAO)", "",
+            "The baseline classifier trained and tested on (a) the raw data with duplicates and conflicting "
+            "duplicates kept and (b) the deduplicated data, each with a random stratified 80/20 split, all 10 "
+            "classes known, same features and preprocessing. Accuracy and macro-F1 on the 20% test split; the last "
+            "two columns give the share of test rows whose exact feature vector is also in the training split, "
+            "and the share whose feature vector is in the training split under a different attack_cat.", "",
+            md(t, ".4f"), ""]
+
+
 def runtime_section(runs, tables_dir):
     """Runtime per detector over all rounds, from the saved run files."""
     rows = [{"detector": r["detector"], **{k: v for k, v in r["runtime_s"].items()}} for r in runs]
