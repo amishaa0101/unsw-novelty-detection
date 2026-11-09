@@ -179,7 +179,9 @@ def build(run_dir, out_path, tables_dir, figures):
             "BH rejects the k smallest p-values only if p_(k) <= k q / m, so with the smallest p-values sitting at "
             "P_min, BH can reject only when at least about P_min * m / q test flows share that floor "
             "(m = number of test flows). The table gives, for each round, n_final, m, P_min, how many test flows "
-            "are at the floor, and how many would be needed at each q.", ""]
+            "are at the floor, and how many would be needed at each q. The floor count is a guide, not an exact "
+            "condition: BH can also reject when the smallest p-values are just above the floor, as long as "
+            "p_(k) <= k q / m holds (compare the 'flagged' and 'at floor' columns).", ""]
     res = bh[bh.detector == bh.detector.iloc[0]][["hidden", "setting", "n_final", "m", "p_min"]].copy()
     floor = bh.pivot_table(index=["hidden", "setting"], columns="detector", values="n_at_floor").reset_index()
     for c in floor.columns[2:]:
