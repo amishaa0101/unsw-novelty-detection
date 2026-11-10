@@ -416,6 +416,86 @@ Per known class at alpha = 0.01, over all rounds and combos:
 | Reconnaissance | 0.0047 | 0.0143 |
 | Normal | 0.0076 | 0.0102 |
 
+## Calibration diagnostics (PCA and kNN; facts only, nothing changed)
+
+Produced by `scripts/check_calibration_excess.py`, which recomputes each round deterministically; the recomputed test statistics T match the saved ones (column `T matches saved`).
+
+**(a) Known test rows whose feature vector is identical to a calib_final row.** Raw feature columns and after preprocessing (dropped columns can make different flows identical):
+
+| seed | detector | rounds | raw identical (max over rounds) | after preprocessing (min) | after preprocessing (max) | T matches saved (max abs diff) |
+|---|---|---|---|---|---|---|
+| 42 | knn | 18 | 0 | 21 | 34 | 0 |
+| 42 | pca | 18 | 0 | 21 | 34 | 0 |
+| 43 | knn | 18 | 0 | 21 | 38 | 0 |
+| 43 | pca | 18 | 0 | 21 | 38 | 0 |
+| 44 | knn | 18 | 0 | 17 | 40 | 0 |
+| 44 | pca | 18 | 0 | 17 | 40 | 0 |
+
+**(b) Ties and precision.** Share of test rows whose T equals some calib_final T exactly, and the dtypes of the detector input, scores and T:
+
+| seed | detector | tie share, all test rows (mean) | tie share, all test rows (max) | tie share, known test rows (max) | distinct T values in calib_final (min over rounds) | n_final (min over rounds) |
+|---|---|---|---|---|---|---|
+| 42 | knn | 0.00367 | 0.00467 | 0.00551 | 12519 | 12579 |
+| 42 | pca | 0.00078 | 0.00108 | 0.00125 | 12565 | 12579 |
+| 43 | knn | 0.00386 | 0.00493 | 0.00644 | 12531 | 12579 |
+| 43 | pca | 0.00084 | 0.00105 | 0.00143 | 12577 | 12579 |
+| 44 | knn | 0.00398 | 0.00493 | 0.00501 | 12514 | 12579 |
+| 44 | pca | 0.00082 | 0.00121 | 0.00135 | 12572 | 12579 |
+
+| detector | input dtype | score dtype calib_final | score dtype test | T dtype calib_final | T dtype test |
+|---|---|---|---|---|---|
+| knn | float32 | float32 | float32 | float64 | float64 |
+| pca | float32 | float64 | float64 | float64 | float64 |
+
+**(c) Pooled false unknown rate per round and per seed** (alpha 0.005, 0.01; full table in `outputs/tables/calibration_per_round.csv`). Counts of rounds above alpha:
+
+| detector | alpha | seed | rounds | rounds above alpha | mean rate | max rate |
+|---|---|---|---|---|---|---|
+| knn | 0.00500 | 42 | 18 | 11 | 0.00530 | 0.00664 |
+| knn | 0.00500 | 43 | 18 | 16 | 0.00549 | 0.00688 |
+| knn | 0.00500 | 44 | 18 | 11 | 0.00519 | 0.00671 |
+| knn | 0.01000 | 42 | 18 | 17 | 0.01116 | 0.01299 |
+| knn | 0.01000 | 43 | 18 | 18 | 0.01102 | 0.01257 |
+| knn | 0.01000 | 44 | 18 | 6 | 0.00995 | 0.01172 |
+| pca | 0.00500 | 42 | 18 | 15 | 0.00576 | 0.00672 |
+| pca | 0.00500 | 43 | 18 | 15 | 0.00568 | 0.00664 |
+| pca | 0.00500 | 44 | 18 | 11 | 0.00517 | 0.00678 |
+| pca | 0.01000 | 42 | 18 | 16 | 0.01095 | 0.01253 |
+| pca | 0.01000 | 43 | 18 | 14 | 0.01063 | 0.01299 |
+| pca | 0.01000 | 44 | 18 | 10 | 0.01028 | 0.01226 |
+
+Per round:
+
+| hidden | setting | knn s42 a=0.005 | knn s42 a=0.01 | knn s43 a=0.005 | knn s43 a=0.01 | knn s44 a=0.005 | knn s44 a=0.01 | pca s42 a=0.005 | pca s42 a=0.01 | pca s43 a=0.005 | pca s43 a=0.01 | pca s44 a=0.005 | pca s44 a=0.01 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Analysis | with_shortcut | 0.0056 | 0.0116 | 0.0054 | 0.0114 | 0.0066 | 0.0104 | 0.0062 | 0.0108 | 0.0065 | 0.0107 | 0.0059 | 0.0119 |
+| Analysis | without_shortcut | 0.0050 | 0.0115 | 0.0052 | 0.0107 | 0.0064 | 0.0098 | 0.0058 | 0.0108 | 0.0066 | 0.0116 | 0.0049 | 0.0116 |
+| Backdoor | with_shortcut | 0.0058 | 0.0130 | 0.0058 | 0.0104 | 0.0053 | 0.0112 | 0.0058 | 0.0114 | 0.0063 | 0.0102 | 0.0058 | 0.0103 |
+| Backdoor | without_shortcut | 0.0066 | 0.0118 | 0.0059 | 0.0108 | 0.0054 | 0.0110 | 0.0060 | 0.0104 | 0.0055 | 0.0110 | 0.0049 | 0.0123 |
+| DoS | with_shortcut | 0.0058 | 0.0124 | 0.0065 | 0.0126 | 0.0052 | 0.0097 | 0.0044 | 0.0102 | 0.0066 | 0.0123 | 0.0059 | 0.0109 |
+| DoS | without_shortcut | 0.0066 | 0.0116 | 0.0069 | 0.0121 | 0.0049 | 0.0092 | 0.0049 | 0.0088 | 0.0056 | 0.0112 | 0.0039 | 0.0091 |
+| Exploits | with_shortcut | 0.0044 | 0.0100 | 0.0056 | 0.0103 | 0.0042 | 0.0099 | 0.0048 | 0.0112 | 0.0052 | 0.0103 | 0.0051 | 0.0103 |
+| Exploits | without_shortcut | 0.0049 | 0.0101 | 0.0056 | 0.0101 | 0.0040 | 0.0100 | 0.0055 | 0.0108 | 0.0058 | 0.0110 | 0.0045 | 0.0097 |
+| Fuzzers | with_shortcut | 0.0049 | 0.0106 | 0.0049 | 0.0112 | 0.0053 | 0.0094 | 0.0067 | 0.0117 | 0.0052 | 0.0095 | 0.0045 | 0.0105 |
+| Fuzzers | without_shortcut | 0.0043 | 0.0105 | 0.0052 | 0.0103 | 0.0050 | 0.0096 | 0.0063 | 0.0125 | 0.0052 | 0.0101 | 0.0046 | 0.0088 |
+| Generic | with_shortcut | 0.0050 | 0.0106 | 0.0051 | 0.0110 | 0.0038 | 0.0096 | 0.0055 | 0.0109 | 0.0060 | 0.0130 | 0.0044 | 0.0087 |
+| Generic | without_shortcut | 0.0048 | 0.0106 | 0.0054 | 0.0105 | 0.0040 | 0.0097 | 0.0054 | 0.0097 | 0.0063 | 0.0117 | 0.0050 | 0.0091 |
+| Reconnaissance | with_shortcut | 0.0055 | 0.0113 | 0.0051 | 0.0104 | 0.0056 | 0.0097 | 0.0065 | 0.0120 | 0.0061 | 0.0097 | 0.0051 | 0.0098 |
+| Reconnaissance | without_shortcut | 0.0052 | 0.0104 | 0.0056 | 0.0115 | 0.0054 | 0.0098 | 0.0052 | 0.0107 | 0.0039 | 0.0093 | 0.0054 | 0.0098 |
+| Shellcode | with_shortcut | 0.0061 | 0.0117 | 0.0053 | 0.0106 | 0.0067 | 0.0113 | 0.0064 | 0.0114 | 0.0049 | 0.0086 | 0.0068 | 0.0110 |
+| Shellcode | without_shortcut | 0.0057 | 0.0113 | 0.0056 | 0.0107 | 0.0063 | 0.0117 | 0.0063 | 0.0120 | 0.0049 | 0.0100 | 0.0056 | 0.0111 |
+| Worms | with_shortcut | 0.0047 | 0.0110 | 0.0044 | 0.0117 | 0.0048 | 0.0086 | 0.0059 | 0.0116 | 0.0058 | 0.0106 | 0.0052 | 0.0103 |
+| Worms | without_shortcut | 0.0046 | 0.0109 | 0.0052 | 0.0118 | 0.0045 | 0.0085 | 0.0060 | 0.0104 | 0.0058 | 0.0106 | 0.0057 | 0.0099 |
+
+**(d) PCA recomputed with float64 preprocessing output** (the pipeline uses float32), for the seed-42 PCA round with the largest pooled false unknown rate at the main alpha:
+
+| seed | hidden | setting | alpha | rate saved (float32 input) | rate recomputed (float64 input) | input dtype | T dtype | max abs diff in T (test) |
+|---|---|---|---|---|---|---|---|---|
+| 42 | Fuzzers | without_shortcut | 0.005 | 0.00630236 | 0.00630236 | float64 | float64 | 1.54364e-06 |
+| 42 | Fuzzers | without_shortcut | 0.01 | 0.0125292 | 0.0125292 | float64 | float64 | 1.54364e-06 |
+| 42 | Fuzzers | without_shortcut | 0.05 | 0.0515511 | 0.0515511 | float64 | float64 | 1.54364e-06 |
+| 42 | Fuzzers | without_shortcut | 0.1 | 0.101781 | 0.101781 | float64 | float64 | 1.54364e-06 |
+
 ## Duplicate-inflation check (optional experiment, no LOAO)
 
 The baseline classifier trained and tested on (a) the raw data with duplicates and conflicting duplicates kept, (b) the raw data with every conflicting group removed but same-label duplicates kept, and (c) the deduplicated data, each with a random stratified 80/20 split, all 10 classes known, same features and preprocessing. Accuracy and macro-F1 on the 20% test split; the last two columns give the share of test rows whose exact feature vector is also in the training split, and the share whose feature vector is in the training split under a different attack_cat.

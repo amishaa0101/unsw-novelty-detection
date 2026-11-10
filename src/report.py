@@ -227,6 +227,61 @@ def low_auroc_section(runs):
             "All detector rounds with novelty AUROC (vs known) below 0.5:", "", md(pd.DataFrame(rows)), ""]
 
 
+def calibration_diagnostics_section(run_dirs, tables_dir, detectors=("pca", "knn"), alphas=(0.005, 0.01)):
+    """Facts from scripts/check_calibration_excess.py plus per-round rates from the saved runs."""
+    checks = [pd.read_csv(p) for p in sorted(Path(tables_dir).glob("calibration_checks_*.csv"))]
+    if not checks:
+        return []
+    c = pd.concat(checks)
+    g = c.groupby(["seed", "detector"])
+    a_tab = g.agg(**{"rounds": ("hidden", "size"),
+                     "raw identical (max over rounds)": ("(a) known test rows identical to a calib_final row, raw features", "max"),
+                     "after preprocessing (min)": ("(a) same, after preprocessing", "min"),
+                     "after preprocessing (max)": ("(a) same, after preprocessing", "max"),
+                     "T matches saved (max abs diff)": ("T matches saved (max abs diff)", "max")}).reset_index()
+    b_tab = g.agg(**{"tie share, all test rows (mean)": ("(b) share of test rows", "mean"),
+                     "tie share, all test rows (max)": ("(b) share of test rows", "max"),
+                     "tie share, known test rows (max)": ("(b) share of known test rows", "max"),
+                     "distinct T values in calib_final (min over rounds)": ("distinct T in calib_final", "min"),
+                     "n_final (min over rounds)": ("n_final", "min")}).reset_index()
+    dt_cols = [k for k in c.columns if "dtype" in k]
+    dtypes = c.groupby("detector")[dt_cols].agg(lambda s: ", ".join(sorted(set(s.astype(str))))).reset_index()
+
+    # (c) per round and per seed, from the saved run files
+    per = []
+    for d in run_dirs:
+        for r in load_runs(d):
+            if r["detector"] in detectors:
+                for a in alphas:
+                    per.append({"hidden": r["hidden"], "setting": r["setting"],
+                                "col": f"{r['detector']} s{r['config']['seed']} a={a}",
+                                "detector": r["detector"], "seed": r["config"]["seed"], "alpha": a,
+                                "rate": r["metrics"][f"hybrid|alpha={a}"]["false_unknown_rate_known"]})
+    per = pd.DataFrame(per)
+    wide = per.pivot_table(index=["hidden", "setting"], columns="col", values="rate").reset_index()
+    wide.to_csv(Path(tables_dir) / "calibration_per_round.csv", index=False, float_format="%.5f")
+    counts = per.assign(above=per.rate > per.alpha).groupby(["detector", "alpha", "seed"]).agg(
+        rounds=("rate", "size"), **{"rounds above alpha": ("above", "sum"), "mean rate": ("rate", "mean"),
+                                    "max rate": ("rate", "max")}).reset_index()
+
+    out = ["## Calibration diagnostics (PCA and kNN; facts only, nothing changed)", "",
+           "Produced by `scripts/check_calibration_excess.py`, which recomputes each round deterministically; "
+           "the recomputed test statistics T match the saved ones (column `T matches saved`).", "",
+           "**(a) Known test rows whose feature vector is identical to a calib_final row.** Raw feature columns "
+           "and after preprocessing (dropped columns can make different flows identical):", "", md(a_tab, ".4g"), "",
+           "**(b) Ties and precision.** Share of test rows whose T equals some calib_final T exactly, and the dtypes "
+           "of the detector input, scores and T:", "", md(b_tab, ".5f"), "", md(dtypes), "",
+           f"**(c) Pooled false unknown rate per round and per seed** (alpha {', '.join(str(a) for a in alphas)}; "
+           "full table in `outputs/tables/calibration_per_round.csv`). Counts of rounds above alpha:", "",
+           md(counts, ".5f"), "", "Per round:", "", md(wide, ".4f"), ""]
+    f64 = sorted(Path(tables_dir).glob("calibration_float64_*.csv"))
+    if f64:
+        out += ["**(d) PCA recomputed with float64 preprocessing output** (the pipeline uses float32), for the "
+                "seed-42 PCA round with the largest pooled false unknown rate at the main alpha:", "",
+                md(pd.concat(pd.read_csv(p) for p in f64), ".6g"), ""]
+    return out
+
+
 def dup_inflation_section(csv_path):
     """Facts from scripts/run_dup_inflation.py (no LOAO; all classes known)."""
     t = pd.read_csv(csv_path)

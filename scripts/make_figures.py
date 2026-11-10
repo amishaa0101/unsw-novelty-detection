@@ -81,6 +81,8 @@ def main():
     extra = [report.low_auroc_section(runs), report.runtime_section(runs, tables)]
     if (run_dir / "combo").exists():
         extra.append(report.combo_section(run_dir, tables))
+    if full:
+        extra.append(report.calibration_diagnostics_section([run_dir, *seed_dirs], tables))
     dup_csv = ROOT / "outputs" / "tables" / "dup_inflation.csv"
     if full and dup_csv.exists():
         extra.append(report.dup_inflation_section(dup_csv))
